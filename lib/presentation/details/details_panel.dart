@@ -90,7 +90,11 @@ class DetailsView extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              FileGlyph(fileName: item.fileName, size: 54),
+              FileGlyph(
+                fileName: item.fileName,
+                thumbnailUrl: item.thumbnailUrl,
+                size: 54,
+              ),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
@@ -157,7 +161,11 @@ class DetailsView extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  '${formatBytes(item.downloadedBytes)} of ${formatBytes(item.sizeBytes)}',
+                  item.status == DownloadStatus.verifying
+                      ? (item.phase ?? 'Processing')
+                      : item.sizeBytes > 0
+                      ? '${formatBytes(item.downloadedBytes)} of ${formatBytes(item.sizeBytes)}'
+                      : '${formatBytes(item.downloadedBytes)} • ${sizeLabel(item)}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: AppType.numeric(palette.textMuted, size: 12),
@@ -180,9 +188,10 @@ class DetailsView extends StatelessWidget {
           ),
           _StatRow(
             label: 'Downloaded',
-            value:
-                '${formatBytes(item.downloadedBytes)} / ${formatBytes(item.sizeBytes)}',
+            value: '${formatBytes(item.downloadedBytes)} / ${sizeLabel(item)}',
           ),
+          if (item.failureReason case final reason?)
+            _StatRow(label: 'Error', value: reason),
           _StatRow(
             label: 'Speed',
             value: item.status == DownloadStatus.downloading
@@ -190,8 +199,13 @@ class DetailsView extends StatelessWidget {
                 : '—',
           ),
           _StatRow(label: 'ETA', value: eta == null ? '—' : formatEta(eta)),
-          _StatRow(label: 'Connections', value: '${item.connections}'),
+          if (item.isMedia)
+            _StatRow(label: 'Format', value: transferLabel(item))
+          else
+            _StatRow(label: 'Connections', value: '${item.connections}'),
           _StatRow(label: 'Save location', value: item.savePath),
+          if (item.filePath case final path?)
+            _StatRow(label: 'File', value: path, ellipsis: true),
           _StatRow(label: 'Source URL', value: item.url, ellipsis: true),
           _StatRow(label: 'Added', value: formatDateTime(item.addedAt)),
           const SizedBox(height: 22),
@@ -230,7 +244,10 @@ class DetailsView extends StatelessWidget {
                 ? '—'
                 : '${item.httpStatus} ${_statusText(item.httpStatus)}',
           ),
-          _StatRow(label: 'Server', value: item.server),
+          _StatRow(
+            label: 'Server',
+            value: item.server.isEmpty ? '—' : item.server,
+          ),
           _StatRow(label: 'Content type', value: item.contentType),
           _StatRow(
             label: 'Resume support',
@@ -304,9 +321,9 @@ class DetailsView extends StatelessWidget {
         );
       case DownloadStatus.completed:
         primary(
-          'Open folder',
-          Icons.folder_open_rounded,
-          DownloadCardAction.openFolder,
+          'Open file',
+          Icons.open_in_new_rounded,
+          DownloadCardAction.openFile,
         );
       case DownloadStatus.verifying:
         primary(

@@ -1,3 +1,7 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_type.dart';
@@ -8,6 +12,8 @@ import '../../core/widgets/mono_dropdown.dart';
 import '../../core/widgets/mono_switch.dart';
 import '../../data/app_state.dart';
 import '../../domain/models/app_settings.dart';
+import '../../domain/models/media_format.dart';
+import '../common/browser_integration_dialog.dart';
 
 /// Complete settings screen organised in the sections defined by the product
 /// specification.
@@ -70,13 +76,34 @@ class SettingsScreen extends StatelessWidget {
                   context,
                   'Default download location',
                   'New downloads are saved here',
-                  _InlineField(
-                    width: 260,
-                    icon: Icons.folder_outlined,
-                    hint: '~/Downloads',
-                    value: _settings.defaultLocation,
-                    onChanged: (value) =>
-                        _update(_settings.copyWith(defaultLocation: value)),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(
+                        child: _InlineField(
+                          width: 220,
+                          icon: Icons.folder_outlined,
+                          hint: '~/Downloads',
+                          value: _settings.defaultLocation,
+                          onChanged: (value) => _update(
+                            _settings.copyWith(defaultLocation: value),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      MonoButton(
+                        label: 'Browse',
+                        height: 36,
+                        onTap: () async {
+                          final dir = await getDirectoryPath(
+                            initialDirectory: _settings.defaultLocation,
+                          );
+                          if (dir != null) {
+                            _update(_settings.copyWith(defaultLocation: dir));
+                          }
+                        },
+                      ),
+                    ],
                   ),
                 ),
                 _switchRow(
@@ -170,6 +197,33 @@ class SettingsScreen extends StatelessWidget {
                     suffix: 's',
                     onChanged: (value) =>
                         _update(_settings.copyWith(retryDelay: value)),
+                  ),
+                ),
+              ]),
+              _MediaSection(state: state, section: _section, row: _row),
+              _section(context, 'INTEGRATIONS', [
+                _switchRow(
+                  context,
+                  'Watch clipboard',
+                  'Offer to download links you copy elsewhere',
+                  _settings.watchClipboard,
+                  (value) => _update(_settings.copyWith(watchClipboard: value)),
+                ),
+                _switchRow(
+                  context,
+                  'Browser button',
+                  'Accept links from the ZON bookmarklet on 127.0.0.1',
+                  _settings.localApi,
+                  (value) => _update(_settings.copyWith(localApi: value)),
+                ),
+                _row(
+                  context,
+                  'Bookmarklet',
+                  'One click sends the page you are on — YouTube, Reels, files',
+                  MonoButton(
+                    label: 'Set up',
+                    icon: Icons.bookmark_add_outlined,
+                    onTap: () => BrowserIntegrationDialog.show(context, state),
                   ),
                 ),
               ]),
@@ -310,35 +364,37 @@ class SettingsScreen extends StatelessWidget {
               _section(context, 'ADVANCED', [
                 _row(
                   context,
-                  'Logs',
-                  'Engine diagnostics and network traces',
+                  'Data folder',
+                  '${state.downloads.length} downloads and '
+                      '${state.history.length} history entries in library.json',
                   MonoButton(
-                    label: 'Open logs',
-                    icon: Icons.description_outlined,
-                    onTap: () => state.showToast(
-                      'Opening ~/Library/Application Support/ZON/logs',
-                    ),
-                  ),
-                ),
-                _row(
-                  context,
-                  'Cache',
-                  'Temporary metadata fetched from servers',
-                  MonoButton(
-                    label: 'Clear cache — 142 MB',
-                    icon: Icons.cleaning_services_rounded,
-                    onTap: () =>
-                        state.showToast('Cache cleared — 142 MB freed'),
-                  ),
-                ),
-                _row(
-                  context,
-                  'Database',
-                  'Persistent download metadata (SQLite)',
-                  MonoButton(
-                    label: 'Open database',
+                    label: 'Open folder',
                     icon: Icons.storage_rounded,
-                    onTap: () => state.showToast('zon.db — 1,428 records'),
+                    onTap: state.dataDir.isEmpty
+                        ? null
+                        : () => unawaited(state.openPath(state.dataDir)),
+                  ),
+                ),
+                _row(
+                  context,
+                  'Media cache',
+                  'yt-dlp extractor cache — clear it if a site suddenly fails',
+                  MonoButton(
+                    label: 'Clear cache',
+                    icon: Icons.cleaning_services_rounded,
+                    onTap: state.mediaTools?.hasYtDlp ?? false
+                        ? () => unawaited(state.clearMediaCache())
+                        : null,
+                  ),
+                ),
+                _row(
+                  context,
+                  'Completed downloads',
+                  'Remove finished items from the list (files stay on disk)',
+                  MonoButton(
+                    label: 'Clear completed',
+                    icon: Icons.playlist_remove_rounded,
+                    onTap: state.clearCompleted,
                   ),
                 ),
                 _row(
@@ -355,7 +411,8 @@ class SettingsScreen extends StatelessWidget {
               const SizedBox(height: 6),
               Center(
                 child: Text(
-                  'ZON 1.0.0  •  BUILD 2026.10  •  ENGINE STANDBY',
+                  'ZON 1.0.0  •  HTTP ENGINE READY  •  '
+                  '${state.mediaTools?.version == null ? 'YT-DLP NOT INSTALLED' : 'YT-DLP ${state.mediaTools!.version}'}',
                   style: AppType.eyebrow(
                     palette.textMuted,
                     size: 8.5,
@@ -633,12 +690,11 @@ class _InlineFieldState extends State<_InlineField> {
   late final TextEditingController _controller = TextEditingController(
     text: widget.value,
   );
-  bool _editing = false;
 
   @override
   void didUpdateWidget(_InlineField oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!_editing && widget.value != _controller.text) {
+    if (widget.value != oldWidget.value && widget.value != _controller.text) {
       _controller.text = widget.value;
     }
   }
@@ -669,8 +725,6 @@ class _InlineFieldState extends State<_InlineField> {
             child: TextField(
               controller: _controller,
               onChanged: widget.onChanged,
-              onTap: () => setState(() => _editing = true),
-              onEditingComplete: () => setState(() => _editing = false),
               style: AppType.body(palette.textPrimary, size: 12.5),
               cursorColor: palette.textPrimary,
               decoration: InputDecoration(
@@ -684,5 +738,167 @@ class _InlineFieldState extends State<_InlineField> {
         ],
       ),
     );
+  }
+}
+
+/// yt-dlp / ffmpeg status and media download preferences.
+class _MediaSection extends StatelessWidget {
+  const _MediaSection({
+    required this.state,
+    required this.section,
+    required this.row,
+  });
+
+  final AppState state;
+  final Widget Function(BuildContext, String, List<Widget>) section;
+  final Widget Function(BuildContext, String, String, Widget) row;
+
+  AppSettings get _settings => state.settings;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final tools = state.mediaTools;
+    final hasYtDlp = tools?.hasYtDlp ?? false;
+    final hasFfmpeg = tools?.hasFfmpeg ?? false;
+    final busy = state.mediaToolsBusy;
+    final install = state.installProgress;
+
+    final String ytDlpStatus;
+    if (install != null) {
+      ytDlpStatus = 'Downloading yt-dlp… ${(install * 100).round()}%';
+    } else if (tools == null || !tools.resolved) {
+      ytDlpStatus = 'Checking…';
+    } else if (hasYtDlp) {
+      ytDlpStatus = 'Version ${tools.version} • ${tools.ytDlpPath}';
+    } else {
+      ytDlpStatus =
+          'Not installed — needed for YouTube, Reels, TikTok and 1000+ sites';
+    }
+
+    final installCommand = Platform.isMacOS
+        ? 'brew install ffmpeg'
+        : Platform.isWindows
+        ? 'winget install ffmpeg'
+        : 'sudo apt install ffmpeg';
+
+    return section(context, 'MEDIA', [
+      row(
+        context,
+        'yt-dlp',
+        ytDlpStatus,
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (!hasYtDlp)
+              MonoButton(
+                label: 'Install',
+                icon: Icons.download_rounded,
+                variant: MonoButtonVariant.primary,
+                onTap: busy || tools == null
+                    ? null
+                    : () => unawaited(state.installYtDlp()),
+              )
+            else if (tools!.isManaged)
+              MonoButton(
+                label: 'Update',
+                icon: Icons.system_update_alt_rounded,
+                onTap: busy ? null : () => unawaited(state.updateYtDlp()),
+              ),
+            const SizedBox(width: 8),
+            MonoIconButton(
+              icon: Icons.refresh_rounded,
+              tooltip: 'Re-scan',
+              onTap: busy ? null : () => unawaited(state.refreshMediaTools()),
+            ),
+          ],
+        ),
+      ),
+      row(
+        context,
+        'ffmpeg',
+        hasFfmpeg
+            ? 'Found • ${tools!.ffmpegPath}'
+            : 'Not found — required for MP3 and HD video. '
+                  'Install with: $installCommand',
+        Icon(
+          hasFfmpeg ? Icons.check_circle_outline_rounded : Icons.info_outline,
+          size: 18,
+          color: hasFfmpeg ? palette.textPrimary : palette.textMuted,
+        ),
+      ),
+      row(
+        context,
+        'Custom yt-dlp path',
+        'Leave empty to auto-detect',
+        _InlineField(
+          width: 260,
+          icon: Icons.terminal_rounded,
+          hint: '/usr/local/bin/yt-dlp',
+          value: _settings.ytDlpPath,
+          onChanged: (value) =>
+              state.updateSettings(_settings.copyWith(ytDlpPath: value)),
+        ),
+      ),
+      row(
+        context,
+        'Default format',
+        'Used for links added without picking one',
+        MonoDropdown<MediaFormat>(
+          value: _settings.defaultMediaFormat,
+          options: [
+            for (final format in MediaFormat.values)
+              MonoOption(format, '${format.label} · ${format.caption}'),
+          ],
+          onChanged: (value) => state.updateSettings(
+            _settings.copyWith(defaultMediaFormat: value),
+          ),
+          height: 34,
+          width: 180,
+        ),
+      ),
+      row(
+        context,
+        'MP3 quality',
+        'Bitrate for audio conversions',
+        MonoDropdown<String>(
+          value: _settings.audioQuality,
+          options: [
+            for (final quality in AppSettings.audioQualities)
+              MonoOption(quality, '${quality.replaceAll('K', '')} kbps'),
+          ],
+          onChanged: (value) =>
+              state.updateSettings(_settings.copyWith(audioQuality: value)),
+          height: 34,
+          width: 180,
+        ),
+      ),
+      row(
+        context,
+        'Browser cookies',
+        'Use your logged-in session for Instagram, private and age-gated videos',
+        MonoDropdown<String>(
+          value: _settings.cookiesBrowser,
+          options: [
+            for (final browser in AppSettings.cookieBrowsers)
+              MonoOption(browser, browser),
+          ],
+          onChanged: (value) =>
+              state.updateSettings(_settings.copyWith(cookiesBrowser: value)),
+          height: 34,
+          width: 180,
+        ),
+      ),
+      row(
+        context,
+        'Embed metadata',
+        'Write title, artist and cover art into the file',
+        MonoSwitch(
+          value: _settings.embedMetadata,
+          onChanged: (value) =>
+              state.updateSettings(_settings.copyWith(embedMetadata: value)),
+        ),
+      ),
+    ]);
   }
 }

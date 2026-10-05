@@ -67,7 +67,9 @@ class StatusChip extends StatelessWidget {
           _Leading(status: status, color: foreground, size: compact ? 10 : 11),
           const SizedBox(width: 5),
           Text(
-            status.name.toUpperCase(),
+            status == DownloadStatus.verifying
+                ? 'PROCESSING'
+                : status.name.toUpperCase(),
             style: AppType.eyebrow(
               foreground,
               size: compact ? 8.5 : 9.5,

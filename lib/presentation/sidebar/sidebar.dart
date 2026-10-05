@@ -6,6 +6,7 @@ import '../../core/widgets/mono_button.dart';
 import '../../core/widgets/zon_logo.dart';
 import '../../data/app_state.dart';
 import '../../domain/models/ui_state.dart';
+import '../common/browser_integration_dialog.dart';
 
 /// Left navigation rail (240px) or collapsed icon rail (76px) on compact
 /// desktop widths.
@@ -31,133 +32,154 @@ class Sidebar extends StatelessWidget {
         color: palette.backgroundElevated,
         border: Border(right: BorderSide(color: palette.border)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: EdgeInsets.fromLTRB(collapsed ? 16 : 22, 24, 16, 0),
-            child: collapsed
-                ? const Center(child: ZonLogo(size: 36))
-                : const ZonBrand(),
-          ),
-          const SizedBox(height: 26),
-          Padding(
-            padding: EdgeInsets.symmetric(horizontal: collapsed ? 14 : 16),
-            child: collapsed
-                ? MonoIconButton(
-                    icon: Icons.add_rounded,
-                    filled: true,
-                    size: 44,
-                    iconSize: 20,
-                    tooltip: 'Add Download',
-                    onTap: onAddDownload,
-                  )
-                : MonoButton(
-                    label: 'Add Download',
-                    icon: Icons.add_rounded,
-                    expand: true,
-                    variant: MonoButtonVariant.primary,
-                    height: 42,
-                    onTap: onAddDownload,
+      // Scrolls instead of overflowing when the window is short.
+      child: LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: IntrinsicHeight(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      collapsed ? 16 : 22,
+                      24,
+                      16,
+                      0,
+                    ),
+                    child: collapsed
+                        ? const Center(child: ZonLogo(size: 36))
+                        : const ZonBrand(),
                   ),
-          ),
-          const SizedBox(height: 22),
-          if (!collapsed)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 26),
-              child: Text('LIBRARY', style: AppType.eyebrow(palette.textMuted)),
-            ),
-          const SizedBox(height: 10),
-          _NavItem(
-            section: AppSection.all,
-            collapsed: collapsed,
-            badge: state.downloads.length,
-            active: state.section == AppSection.all,
-            onTap: () => state.setSection(AppSection.all),
-          ),
-          _NavItem(
-            section: AppSection.active,
-            collapsed: collapsed,
-            badge: state.activeCount + state.verifyingCount,
-            active: state.section == AppSection.active,
-            onTap: () => state.setSection(AppSection.active),
-          ),
-          _NavItem(
-            section: AppSection.queued,
-            collapsed: collapsed,
-            badge: state.queuedCount,
-            active: state.section == AppSection.queued,
-            onTap: () => state.setSection(AppSection.queued),
-          ),
-          _NavItem(
-            section: AppSection.completed,
-            collapsed: collapsed,
-            badge: state.completedCount,
-            active: state.section == AppSection.completed,
-            onTap: () => state.setSection(AppSection.completed),
-          ),
-          _NavItem(
-            section: AppSection.failed,
-            collapsed: collapsed,
-            badge: state.failedCount,
-            active: state.section == AppSection.failed,
-            onTap: () => state.setSection(AppSection.failed),
-          ),
-          const SizedBox(height: 14),
-          Padding(
-            padding: EdgeInsets.symmetric(horizontal: collapsed ? 26 : 22),
-            child: Container(height: 1, color: palette.border),
-          ),
-          const SizedBox(height: 14),
-          _NavItem(
-            section: AppSection.history,
-            collapsed: collapsed,
-            badge: state.history.length,
-            active: state.section == AppSection.history,
-            onTap: () => state.setSection(AppSection.history),
-          ),
-          _NavItem(
-            section: AppSection.settings,
-            collapsed: collapsed,
-            active: state.section == AppSection.settings,
-            onTap: () => state.setSection(AppSection.settings),
-          ),
-          const Spacer(),
-          if (!collapsed)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: _ExtensionCard(
-                onTap: () => state.showToast(
-                  'Browser extension — connect ZON to your browser',
-                ),
+                  const SizedBox(height: 26),
+                  Padding(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: collapsed ? 14 : 16,
+                    ),
+                    child: collapsed
+                        ? MonoIconButton(
+                            icon: Icons.add_rounded,
+                            filled: true,
+                            size: 44,
+                            iconSize: 20,
+                            tooltip: 'Add Download',
+                            onTap: onAddDownload,
+                          )
+                        : MonoButton(
+                            label: 'Add Download',
+                            icon: Icons.add_rounded,
+                            expand: true,
+                            variant: MonoButtonVariant.primary,
+                            height: 42,
+                            onTap: onAddDownload,
+                          ),
+                  ),
+                  const SizedBox(height: 22),
+                  if (!collapsed)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 26),
+                      child: Text(
+                        'LIBRARY',
+                        style: AppType.eyebrow(palette.textMuted),
+                      ),
+                    ),
+                  const SizedBox(height: 10),
+                  _NavItem(
+                    section: AppSection.all,
+                    collapsed: collapsed,
+                    badge: state.downloads.length,
+                    active: state.section == AppSection.all,
+                    onTap: () => state.setSection(AppSection.all),
+                  ),
+                  _NavItem(
+                    section: AppSection.active,
+                    collapsed: collapsed,
+                    badge: state.activeCount + state.verifyingCount,
+                    active: state.section == AppSection.active,
+                    onTap: () => state.setSection(AppSection.active),
+                  ),
+                  _NavItem(
+                    section: AppSection.queued,
+                    collapsed: collapsed,
+                    badge: state.queuedCount,
+                    active: state.section == AppSection.queued,
+                    onTap: () => state.setSection(AppSection.queued),
+                  ),
+                  _NavItem(
+                    section: AppSection.completed,
+                    collapsed: collapsed,
+                    badge: state.completedCount,
+                    active: state.section == AppSection.completed,
+                    onTap: () => state.setSection(AppSection.completed),
+                  ),
+                  _NavItem(
+                    section: AppSection.failed,
+                    collapsed: collapsed,
+                    badge: state.failedCount,
+                    active: state.section == AppSection.failed,
+                    onTap: () => state.setSection(AppSection.failed),
+                  ),
+                  const SizedBox(height: 14),
+                  Padding(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: collapsed ? 26 : 22,
+                    ),
+                    child: Container(height: 1, color: palette.border),
+                  ),
+                  const SizedBox(height: 14),
+                  _NavItem(
+                    section: AppSection.history,
+                    collapsed: collapsed,
+                    badge: state.history.length,
+                    active: state.section == AppSection.history,
+                    onTap: () => state.setSection(AppSection.history),
+                  ),
+                  _NavItem(
+                    section: AppSection.settings,
+                    collapsed: collapsed,
+                    active: state.section == AppSection.settings,
+                    onTap: () => state.setSection(AppSection.settings),
+                  ),
+                  const Spacer(),
+                  if (!collapsed)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                      child: _ExtensionCard(
+                        onTap: () =>
+                            BrowserIntegrationDialog.show(context, state),
+                      ),
+                    ),
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(collapsed ? 8 : 22, 0, 16, 18),
+                    child: collapsed
+                        ? const Center(child: _VersionDot())
+                        : Row(
+                            children: [
+                              const _VersionDot(),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  alignment: Alignment.centerLeft,
+                                  child: Text(
+                                    'ZON 1.0.0  •  ENGINE STANDBY',
+                                    style: AppType.eyebrow(
+                                      palette.textMuted,
+                                      size: 8.5,
+                                      spacing: 1.2,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                  ),
+                ],
               ),
             ),
-          Padding(
-            padding: EdgeInsets.fromLTRB(collapsed ? 8 : 22, 0, 16, 18),
-            child: collapsed
-                ? const Center(child: _VersionDot())
-                : Row(
-                    children: [
-                      const _VersionDot(),
-                      const SizedBox(width: 8),
-                      Flexible(
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            'ZON 1.0.0  •  ENGINE STANDBY',
-                            style: AppType.eyebrow(
-                              palette.textMuted,
-                              size: 8.5,
-                              spacing: 1.2,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -334,7 +356,7 @@ class _ExtensionCardState extends State<_ExtensionCard> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Browser Extension',
+                      'Browser Button',
                       style: AppType.body(
                         palette.textPrimary,
                         size: 12.5,
@@ -343,7 +365,7 @@ class _ExtensionCardState extends State<_ExtensionCard> {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'Capture links automatically',
+                      'Send pages to ZON in one click',
                       style: AppType.body(palette.textMuted, size: 10.5),
                     ),
                   ],

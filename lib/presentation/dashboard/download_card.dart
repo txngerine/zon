@@ -17,6 +17,7 @@ enum DownloadCardAction {
   cancel,
   remove,
   openFolder,
+  openFile,
   copyUrl,
   details,
   redownload,
@@ -80,7 +81,11 @@ class _DownloadCardState extends State<DownloadCard> {
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            FileGlyph(fileName: item.fileName, size: 46),
+            FileGlyph(
+              fileName: item.fileName,
+              thumbnailUrl: item.thumbnailUrl,
+              size: 46,
+            ),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
@@ -155,7 +160,11 @@ class _DownloadCardState extends State<DownloadCard> {
         final wide = constraints.maxWidth > 640;
         return Row(
           children: [
-            FileGlyph(fileName: item.fileName, size: 34),
+            FileGlyph(
+              fileName: item.fileName,
+              thumbnailUrl: item.thumbnailUrl,
+              size: 34,
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -238,15 +247,34 @@ class _DownloadCardState extends State<DownloadCard> {
       DownloadStatus.failed => item.failureReason ?? 'Failed',
       DownloadStatus.queued => 'Queued • ${item.priority.label} priority',
       DownloadStatus.completed => 'Completed • ${item.savePath}',
-      DownloadStatus.verifying => 'Verifying • ${formatBytes(item.sizeBytes)}',
+      DownloadStatus.verifying =>
+        '${item.phase ?? 'Processing'} • ${sizeLabel(item)}',
       DownloadStatus.cancelled => 'Cancelled',
-      _ =>
-        '${formatBytes(item.sizeBytes)}  •  ${item.source}  •  ${item.connections} connections',
+      _ => '${sizeLabel(item)}  •  ${item.source}  •  ${transferLabel(item)}',
     };
   }
 }
 
 // -----------------------------------------------------------------------------
+
+/// Total size, or a placeholder while the server/extractor has not said.
+String sizeLabel(DownloadItem item) {
+  if (item.sizeBytes > 0) return formatBytes(item.sizeBytes);
+  return switch (item.status) {
+    DownloadStatus.downloading when item.downloadedBytes == 0 =>
+      item.isMedia ? 'Fetching info…' : 'Connecting…',
+    _ => 'Unknown size',
+  };
+}
+
+/// "16 connections" for files, "MP3 · Audio" for media.
+String transferLabel(DownloadItem item) {
+  final format = item.mediaFormat;
+  if (item.isMedia && format != null) {
+    return '${format.label} · ${format.caption}';
+  }
+  return '${item.connections} connection${item.connections == 1 ? '' : 's'}';
+}
 
 class _MetaLine extends StatelessWidget {
   const _MetaLine({required this.item, required this.hovered});
@@ -263,7 +291,7 @@ class _MetaLine extends StatelessWidget {
       case DownloadStatus.failed:
         lead = item.failureReason ?? 'Transfer failed';
       case DownloadStatus.verifying:
-        lead = 'Verifying file integrity';
+        lead = item.phase ?? 'Processing';
       case DownloadStatus.queued:
         lead = 'Queued • ${item.priority.label} priority';
       case DownloadStatus.cancelled:
@@ -273,7 +301,7 @@ class _MetaLine extends StatelessWidget {
       case DownloadStatus.paused:
         lead = 'Paused at ${formatPercent(item.progress)}';
       case DownloadStatus.downloading:
-        lead = '${item.connections} connections';
+        lead = transferLabel(item);
     }
 
     return Wrap(
@@ -282,7 +310,7 @@ class _MetaLine extends StatelessWidget {
       runSpacing: 6,
       children: [
         Text(
-          formatBytes(item.sizeBytes),
+          sizeLabel(item),
           style: AppType.numeric(palette.textSecondary, size: 12),
         ),
         _Dot(color: palette.textMuted),
@@ -345,7 +373,9 @@ class _StatsRow extends StatelessWidget {
       ),
     );
     final transferred = Text(
-      '${formatBytes(item.downloadedBytes)} / ${formatBytes(item.sizeBytes)}',
+      item.sizeBytes > 0
+          ? '${formatBytes(item.downloadedBytes)} / ${formatBytes(item.sizeBytes)}'
+          : formatBytes(item.downloadedBytes),
       style: AppType.numeric(palette.textMuted, size: 12),
     );
     final speedText = Text(
@@ -357,7 +387,7 @@ class _StatsRow extends StatelessWidget {
       style: AppType.numeric(palette.textSecondary, size: 12),
     );
     final connections = Text(
-      '${item.connections} connections',
+      transferLabel(item),
       style: AppType.numeric(palette.textMuted, size: 12),
     );
 
@@ -579,7 +609,9 @@ class _MoreMenu extends StatelessWidget {
       ),
       itemBuilder: (context) => [
         entry('details', Icons.toc_rounded, 'Details'),
-        entry('folder', Icons.folder_open_rounded, 'Open folder'),
+        if (item.status == DownloadStatus.completed)
+          entry('open', Icons.open_in_new_rounded, 'Open file'),
+        entry('folder', Icons.folder_open_rounded, 'Show in folder'),
         entry('copy', Icons.link_rounded, 'Copy link'),
         if (item.status == DownloadStatus.completed ||
             item.status == DownloadStatus.failed)
@@ -611,6 +643,7 @@ class _MoreMenu extends StatelessWidget {
 
   void onActionString(String value) {
     final action = switch (value) {
+      'open' => DownloadCardAction.openFile,
       'folder' => DownloadCardAction.openFolder,
       'copy' => DownloadCardAction.copyUrl,
       'redownload' => DownloadCardAction.redownload,

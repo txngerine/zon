@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_type.dart';
@@ -8,8 +11,13 @@ import '../../core/widgets/mono_dropdown.dart';
 import '../../data/app_state.dart';
 import '../../domain/models/app_settings.dart';
 import '../../domain/models/download.dart';
+import '../../domain/models/media_format.dart';
+import '../../engine/media/media_sites.dart';
+import '../../engine/media/ytdlp.dart';
 
-enum AddDownloadMode { single, multiple, torrent, batch }
+/// `media` is the single-link dialog with video/audio options forced on, for
+/// sites ZON does not recognise by URL.
+enum AddDownloadMode { single, multiple, media, batch }
 
 /// Polished modal for creating downloads.
 class AddDownloadDialog extends StatefulWidget {
@@ -68,14 +76,25 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
 
   late double _connections;
   late String _speedLimit;
+  late MediaFormat _format;
   DownloadPriority _priority = DownloadPriority.normal;
   bool _startImmediately = true;
   bool _createSubfolder = false;
   bool _nameEdited = false;
-  String? _torrentName;
+
+  // Media preview (yt-dlp metadata).
+  Timer? _probeDebounce;
+  int _probeToken = 0;
+  bool _probing = false;
+  MediaInfo? _info;
+  String? _probeError;
+  String _probedUrl = '';
+  bool _wholePlaylist = true;
 
   AppState get state => widget.state;
   AddDownloadMode get mode => widget.mode;
+  bool get _singleLink =>
+      mode == AddDownloadMode.single || mode == AddDownloadMode.media;
 
   @override
   void initState() {
@@ -83,29 +102,44 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
     _url = TextEditingController(text: widget.initialUrl);
     _savePath.text = state.settings.defaultLocation;
     _connections = state.settings.defaultConnections.toDouble();
-    _speedLimit = state.settings.defaultSpeedLimit;
+    _speedLimit = 'No Limit';
+    _format = state.settings.defaultMediaFormat;
     if (mode == AddDownloadMode.multiple || mode == AddDownloadMode.batch) {
       _startImmediately = false;
     }
+    if (widget.initialUrl.isNotEmpty) _onUrlChanged(widget.initialUrl);
+    state.addListener(_onState);
   }
 
   @override
   void dispose() {
+    state.removeListener(_onState);
+    _probeDebounce?.cancel();
     _url.dispose();
     _fileName.dispose();
     _savePath.dispose();
     super.dispose();
   }
 
+  /// Re-probe once yt-dlp finishes installing.
+  void _onState() {
+    if (!mounted) return;
+    final ready = state.mediaTools?.hasYtDlp ?? false;
+    if (ready && _isMedia && _info == null && !_probing) {
+      _scheduleProbe(_url.text.trim(), immediate: true);
+    }
+    setState(() {});
+  }
+
   String get _title => switch (mode) {
     AddDownloadMode.single => 'Add Download',
     AddDownloadMode.multiple => 'Add Multiple Links',
-    AddDownloadMode.torrent => 'Add Torrent',
+    AddDownloadMode.media => 'Download Video or Audio',
     AddDownloadMode.batch => 'Batch Download',
   };
 
   List<String> get _urls {
-    if (mode == AddDownloadMode.single) {
+    if (_singleLink) {
       final value = _url.text.trim();
       return value.isEmpty ? const [] : [value];
     }
@@ -116,52 +150,161 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
         .toList();
   }
 
-  bool get _canStart => switch (mode) {
-    AddDownloadMode.torrent => _torrentName != null,
-    _ => _urls.isNotEmpty,
-  };
+  MediaSite? get _site => detectMediaSite(_url.text.trim());
+
+  /// The single link goes through yt-dlp.
+  bool get _isMedia =>
+      _singleLink &&
+      _url.text.trim().isNotEmpty &&
+      (mode == AddDownloadMode.media || _site != null);
+
+  int get _mediaLinkCount => _urls.where(isMediaUrl).length;
+
+  bool get _hasYtDlp => state.mediaTools?.hasYtDlp ?? false;
+  bool get _hasFfmpeg => state.mediaTools?.hasFfmpeg ?? false;
+
+  bool get _canStart {
+    if (_urls.isEmpty) return false;
+    if (_isMedia && !_hasYtDlp) return false;
+    if (_isMedia && _format.needsFfmpeg && !_hasFfmpeg) return false;
+    return true;
+  }
+
+  void _onUrlChanged(String value) {
+    if (_singleLink && !_nameEdited) {
+      final link = value.trim();
+      _fileName.text = link.isEmpty || _isMedia ? '' : fileNameFromUrl(link);
+    }
+    if (_isMedia) {
+      _scheduleProbe(value.trim());
+    } else {
+      _probeDebounce?.cancel();
+      _info = null;
+      _probeError = null;
+      _probing = false;
+      _probedUrl = '';
+    }
+  }
+
+  void _scheduleProbe(String link, {bool immediate = false}) {
+    if (link == _probedUrl && (_info != null || _probing)) return;
+    _probeDebounce?.cancel();
+    _info = null;
+    _probeError = null;
+    if (!_hasYtDlp || Uri.tryParse(link)?.hasAuthority != true) {
+      _probing = false;
+      return;
+    }
+    _probing = true;
+    _probeDebounce = Timer(
+      immediate ? Duration.zero : const Duration(milliseconds: 650),
+      () => _probe(link),
+    );
+  }
+
+  Future<void> _probe(String link) async {
+    final token = ++_probeToken;
+    _probedUrl = link;
+    try {
+      final info = await state.probeMedia(link);
+      if (!mounted || token != _probeToken) return;
+      setState(() {
+        _info = info;
+        _probing = false;
+      });
+    } catch (error) {
+      if (!mounted || token != _probeToken) return;
+      setState(() {
+        _probeError = '$error';
+        _probing = false;
+      });
+    }
+  }
+
+  Future<void> _browse() async {
+    final dir = await getDirectoryPath(initialDirectory: _savePath.text);
+    if (dir != null && mounted) setState(() => _savePath.text = dir);
+  }
 
   void _submit() {
     if (!_canStart) return;
     final start = _startImmediately;
-    final paths = List<String>.of(_urls);
+    final connections = _connections.round();
 
-    for (final link in paths) {
+    if (_isMedia) {
+      final info = _info;
+      if (info != null && info.isPlaylist && _wholePlaylist) {
+        state.createMediaBatch(
+          info.entries,
+          format: _format,
+          savePath: _savePath.text,
+          connections: connections,
+          priority: _priority,
+          startImmediately: start,
+          createSubfolder: _createSubfolder,
+          speedLimit: _speedLimit,
+        );
+      } else {
+        final typed = _fileName.text.trim();
+        state.createDownload(
+          url: _url.text,
+          fileName: typed.isNotEmpty
+              ? typed
+              : (info == null || info.isPlaylist ? null : info.title),
+          lockName: typed.isNotEmpty,
+          savePath: _savePath.text,
+          connections: connections,
+          priority: _priority,
+          startImmediately: start,
+          createSubfolder: _createSubfolder,
+          kind: DownloadKind.media,
+          mediaFormat: _format,
+          speedLimit: _speedLimit,
+          thumbnailUrl: info?.thumbnail,
+        );
+      }
+      Navigator.of(context).pop();
+      return;
+    }
+
+    for (final link in List<String>.of(_urls)) {
       state.createDownload(
         url: link,
-        fileName: mode == AddDownloadMode.single ? _fileName.text : null,
+        fileName: _singleLink ? _fileName.text : null,
         savePath: _savePath.text,
-        connections: _connections.round(),
+        connections: connections,
         priority: _priority,
         startImmediately: start,
         createSubfolder: _createSubfolder,
+        mediaFormat: _format,
+        speedLimit: _speedLimit,
       );
     }
-
-    if (mode == AddDownloadMode.torrent && _torrentName != null) {
-      state.createDownload(
-        url: 'magnet:?xt=urn:btih:${_torrentName!.replaceAll('.torrent', '')}',
-        fileName: _torrentName!.replaceAll('.torrent', '.iso'),
-        savePath: _savePath.text,
-        connections: _connections.round(),
-        priority: _priority,
-        startImmediately: start,
-        createSubfolder: _createSubfolder,
-      );
-    }
-
     Navigator.of(context).pop();
+  }
+
+  String get _startLabel {
+    final info = _info;
+    if (_isMedia && info != null && info.isPlaylist && _wholePlaylist) {
+      return 'Download ${info.entries.length} Videos';
+    }
+    if (_isMedia) return _format.isAudio ? 'Download Audio' : 'Download Video';
+    return _urls.length > 1
+        ? 'Start ${_urls.length} Downloads'
+        : 'Start Download';
   }
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    final media = _isMedia;
+    final mediaInList = !_singleLink && _mediaLinkCount > 0;
 
     return Dialog(
       alignment: Alignment.center,
       insetPadding: const EdgeInsets.symmetric(vertical: 40, horizontal: 24),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 560),
+        constraints: const BoxConstraints(maxWidth: 580),
         child: SingleChildScrollView(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(26, 24, 26, 22),
@@ -180,8 +323,8 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
                         border: Border.all(color: palette.border),
                       ),
                       child: Icon(
-                        mode == AddDownloadMode.torrent
-                            ? Icons.cloud_outlined
+                        media || mode == AddDownloadMode.media
+                            ? Icons.smart_display_outlined
                             : Icons.arrow_downward_rounded,
                         size: 17,
                         color: palette.textPrimary,
@@ -202,12 +345,13 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
                           ),
                           const SizedBox(height: 3),
                           Text(switch (mode) {
+                            _ when media =>
+                              '${_site?.name ?? 'Media'} link — pick video or audio.',
                             AddDownloadMode.single =>
-                              'ZON will fetch metadata before transferring.',
+                              'Files, YouTube, Reels, TikTok — paste any link.',
+                            AddDownloadMode.media => 'YouTube, Instagram Reels, TikTok, X and 1000+ sites.',
                             AddDownloadMode.multiple =>
                               'Paste one link per line.',
-                            AddDownloadMode.torrent =>
-                              'Select a .torrent file to inspect its metadata.',
                             AddDownloadMode.batch =>
                               'Queue many files at once — one link per line.',
                           }, style: AppType.body(palette.textMuted, size: 12)),
@@ -226,86 +370,78 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
                   ],
                 ),
                 const SizedBox(height: 24),
-                if (mode == AddDownloadMode.torrent)
-                  ..._torrentFields(palette)
-                else ...[
-                  _label('URL'),
-                  const SizedBox(height: 8),
-                  _textField(
-                    controller: _url,
-                    hint: mode == AddDownloadMode.single
-                        ? 'https://example.com/large-file.iso'
-                        : 'https://example.com/file-1.iso\nhttps://example.com/file-2.iso',
-                    multiline: mode != AddDownloadMode.single,
-                    maxLines: mode != AddDownloadMode.single ? 5 : 1,
-                    icon: Icons.link_rounded,
-                    onChanged: (value) {
-                      if (mode == AddDownloadMode.single && !_nameEdited) {
-                        final name = fileNameFromUrl(value);
-                        _fileName.text = value.trim().isEmpty ? '' : name;
-                      }
-                      setState(() {});
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  if (mode == AddDownloadMode.single) ...[
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _column(
-                            'FILE NAME',
-                            _textField(
-                              controller: _fileName,
-                              hint: 'Detected from URL',
-                              icon: Icons.drive_file_rename_outline_rounded,
-                              onChanged: (_) =>
-                                  setState(() => _nameEdited = true),
-                            ),
+                _label('URL'),
+                const SizedBox(height: 8),
+                _textField(
+                  controller: _url,
+                  hint: switch (mode) {
+                    AddDownloadMode.single =>
+                      'https://example.com/file.iso or a YouTube link',
+                    AddDownloadMode.media =>
+                      'https://www.youtube.com/watch?v=…',
+                    _ => 'https://example.com/file-1.iso\nhttps://youtu.be/…',
+                  },
+                  multiline: !_singleLink,
+                  maxLines: _singleLink ? 1 : 5,
+                  icon: Icons.link_rounded,
+                  onChanged: (value) => setState(() => _onUrlChanged(value)),
+                ),
+                const SizedBox(height: 16),
+                if (media) ..._mediaFields(palette),
+                if (_singleLink) ...[
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _column(
+                          'FILE NAME',
+                          _textField(
+                            controller: _fileName,
+                            hint: media
+                                ? 'Video title (default)'
+                                : 'Detected from server',
+                            icon: Icons.drive_file_rename_outline_rounded,
+                            onChanged: (_) =>
+                                setState(() => _nameEdited = true),
                           ),
-                        ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: _column(
-                            'SAVE LOCATION',
-                            _textField(
-                              controller: _savePath,
-                              hint: '~/Downloads',
-                              icon: Icons.folder_outlined,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                  ] else ...[
-                    _label('SAVE LOCATION'),
-                    const SizedBox(height: 8),
-                    _textField(
-                      controller: _savePath,
-                      hint: '~/Downloads',
-                      icon: Icons.folder_outlined,
-                    ),
-                    const SizedBox(height: 16),
-                    if (mode == AddDownloadMode.multiple ||
-                        mode == AddDownloadMode.batch)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 16),
-                        child: Text(
-                          '${_urls.length} link${_urls.length == 1 ? '' : 's'} detected',
-                          style: AppType.body(palette.textSecondary, size: 12),
                         ),
                       ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: _column('SAVE LOCATION', _locationField()),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                ] else ...[
+                  _label('SAVE LOCATION'),
+                  const SizedBox(height: 8),
+                  _locationField(),
+                  const SizedBox(height: 12),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: Text(
+                      '${_urls.length} link${_urls.length == 1 ? '' : 's'} detected'
+                      '${mediaInList ? '  •  $_mediaLinkCount video/audio' : ''}',
+                      style: AppType.body(palette.textSecondary, size: 12),
+                    ),
+                  ),
+                  if (mediaInList) ...[
+                    _label('FORMAT FOR VIDEO LINKS'),
+                    const SizedBox(height: 10),
+                    _formatChips(palette),
+                    const SizedBox(height: 16),
                   ],
                 ],
                 _label('TRANSFER'),
                 const SizedBox(height: 10),
                 _sliderRow(
                   palette,
-                  label: 'Connections',
-                  value: _connections,
+                  label: media ? 'Fragments' : 'Connections',
+                  value: media ? _connections.clamp(1, 8) : _connections,
                   min: 1,
-                  max: 32,
-                  divisionLabel: '${_connections.round()}',
+                  max: media ? 8 : 32,
+                  divisionLabel:
+                      '${(media ? _connections.clamp(1, 8) : _connections).round()}',
                   onChanged: (value) => setState(() => _connections = value),
                 ),
                 const SizedBox(height: 14),
@@ -341,7 +477,7 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
                 _optionRow(
                   palette,
                   'Start immediately',
-                  'Begin transferring as soon as metadata is ready',
+                  'Begin as soon as a download slot is free',
                   _startImmediately,
                   (value) => setState(() => _startImmediately = value),
                 ),
@@ -357,7 +493,9 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
                 _optionRow(
                   palette,
                   'Create subfolder',
-                  'Organise files inside a folder named after the host',
+                  media
+                      ? 'Organise files inside a folder named after the site'
+                      : 'Organise files inside a folder named after the host',
                   _createSubfolder,
                   (value) => setState(() => _createSubfolder = value),
                 ),
@@ -372,11 +510,7 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
                     ),
                     const SizedBox(width: 10),
                     MonoButton(
-                      label: mode == AddDownloadMode.torrent
-                          ? 'Start Download'
-                          : _urls.length > 1
-                          ? 'Start ${_urls.length} Downloads'
-                          : 'Start Download',
+                      label: _startLabel,
                       icon: Icons.arrow_downward_rounded,
                       variant: MonoButtonVariant.primary,
                       height: 42,
@@ -394,75 +528,253 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
   }
 
   // --------------------------------------------------------------------------
+  // Media
+  // --------------------------------------------------------------------------
 
-  List<Widget> _torrentFields(ZonPalette palette) {
+  List<Widget> _mediaFields(ZonPalette palette) {
+    if (!_hasYtDlp) return [_installCard(palette), const SizedBox(height: 16)];
     return [
-      _label('TORRENT FILE'),
-      const SizedBox(height: 8),
-      Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: palette.surface,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: palette.border),
+      _previewCard(palette),
+      const SizedBox(height: 16),
+      _label('FORMAT'),
+      const SizedBox(height: 10),
+      _formatChips(palette),
+      if (!_hasFfmpeg) ...[
+        const SizedBox(height: 10),
+        Text(
+          'ffmpeg not found: MP3 is unavailable and video is limited to '
+          'single-file streams (often 720p or lower).',
+          style: AppType.body(palette.textMuted, size: 11.5),
         ),
-        child: Row(
-          children: [
-            Icon(
-              Icons.cloud_outlined,
-              size: 20,
-              color: _torrentName == null
-                  ? palette.textMuted
-                  : palette.textPrimary,
-            ),
-            const SizedBox(width: 13),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _torrentName ?? 'No torrent selected',
-                    style: AppType.body(
-                      _torrentName == null
-                          ? palette.textMuted
-                          : palette.textPrimary,
-                      size: 13,
-                      weight: FontWeight.w500,
-                    ),
+      ],
+      const SizedBox(height: 16),
+    ];
+  }
+
+  Widget _installCard(ZonPalette palette) {
+    final progress = state.installProgress;
+    final busy = state.mediaToolsBusy;
+    return _panel(
+      palette,
+      Row(
+        children: [
+          Icon(Icons.extension_outlined, size: 20, color: palette.textPrimary),
+          const SizedBox(width: 13),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'yt-dlp is needed for video sites',
+                  style: AppType.body(
+                    palette.textPrimary,
+                    size: 13,
+                    weight: FontWeight.w600,
                   ),
-                  if (_torrentName != null) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      'Metadata ready  •  5.9 GB  •  1,842 pieces  •  24 trackers',
-                      style: AppType.body(palette.textMuted, size: 11.5),
-                    ),
-                  ],
-                ],
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  progress != null
+                      ? 'Downloading… ${(progress * 100).round()}%'
+                      : 'Free, open source, about 35 MB. ZON keeps it updated.',
+                  style: AppType.body(palette.textMuted, size: 11.5),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          MonoButton(
+            label: busy ? 'Installing…' : 'Install',
+            icon: Icons.download_rounded,
+            variant: MonoButtonVariant.primary,
+            height: 34,
+            fontSize: 12,
+            onTap: busy ? null : () => unawaited(state.installYtDlp()),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _previewCard(ZonPalette palette) {
+    final info = _info;
+    final error = _probeError;
+
+    if (_probing || (info == null && error == null)) {
+      return _panel(
+        palette,
+        Row(
+          children: [
+            SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: palette.textSecondary,
               ),
             ),
+            const SizedBox(width: 13),
+            Text(
+              'Reading video info…',
+              style: AppType.body(palette.textSecondary, size: 12.5),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (info == null) {
+      return _panel(
+        palette,
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.info_outline, size: 18, color: palette.textSecondary),
             const SizedBox(width: 12),
-            MonoButton(
-              label: _torrentName == null ? 'Choose file' : 'Replace',
-              height: 34,
-              fontSize: 12,
-              onTap: () => setState(
-                () => _torrentName = 'archlinux-2025.10.01-x86_64.torrent',
+            Expanded(
+              child: Text(
+                error!,
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
+                style: AppType.body(palette.textSecondary, size: 12),
               ),
             ),
           ],
         ),
-      ),
-      const SizedBox(height: 16),
-      _label('SAVE LOCATION'),
-      const SizedBox(height: 8),
-      _textField(
-        controller: _savePath,
-        hint: '~/Downloads',
-        icon: Icons.folder_outlined,
-      ),
-      const SizedBox(height: 16),
+      );
+    }
+
+    final details = <String>[
+      ?info.uploader,
+      if (info.isPlaylist) 'Playlist • ${info.entries.length} videos',
+      if (info.duration case final duration?)
+        formatDuration(duration.inSeconds),
+      if (info.maxHeight case final height?) 'up to ${height}p',
+      info.site,
     ];
+
+    return _panel(
+      palette,
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(9),
+                child: Container(
+                  width: 112,
+                  height: 63,
+                  color: palette.surfaceHighest,
+                  child: info.thumbnail == null
+                      ? Icon(
+                          Icons.smart_display_outlined,
+                          color: palette.textMuted,
+                        )
+                      : Image.network(
+                          info.thumbnail!,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => Icon(
+                            Icons.smart_display_outlined,
+                            color: palette.textMuted,
+                          ),
+                        ),
+                ),
+              ),
+              const SizedBox(width: 13),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      info.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppType.body(
+                        palette.textPrimary,
+                        size: 13,
+                        weight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      details.join('  •  '),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppType.body(palette.textMuted, size: 11.5),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (info.isPlaylist && info.entries.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            _optionRow(
+              palette,
+              'Download all ${info.entries.length} videos',
+              'Each video becomes its own download in the queue',
+              _wholePlaylist,
+              (value) => setState(() => _wholePlaylist = value),
+            ),
+          ],
+        ],
+      ),
+    );
   }
+
+  Widget _formatChips(ZonPalette palette) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        for (final format in MediaFormat.values)
+          _FormatChip(
+            format: format,
+            selected: _format == format,
+            enabled: !format.needsFfmpeg || _hasFfmpeg,
+            onTap: () => setState(() => _format = format),
+          ),
+      ],
+    );
+  }
+
+  Widget _panel(ZonPalette palette, Widget child) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: palette.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: palette.border),
+      ),
+      child: child,
+    );
+  }
+
+  Widget _locationField() {
+    return Row(
+      children: [
+        Expanded(
+          child: _textField(
+            controller: _savePath,
+            hint: '~/Downloads',
+            icon: Icons.folder_outlined,
+          ),
+        ),
+        const SizedBox(width: 6),
+        MonoIconButton(
+          icon: Icons.more_horiz_rounded,
+          tooltip: 'Choose folder',
+          size: 42,
+          onTap: _browse,
+        ),
+      ],
+    );
+  }
+
+  // --------------------------------------------------------------------------
 
   Widget _column(String label, Widget child) {
     return Column(
@@ -674,5 +986,77 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
         ),
       ),
     );
+  }
+}
+
+class _FormatChip extends StatelessWidget {
+  const _FormatChip({
+    required this.format,
+    required this.selected,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final MediaFormat format;
+  final bool selected;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final foreground = !enabled
+        ? palette.textMuted.withValues(alpha: 0.5)
+        : selected
+        ? palette.onAccent
+        : palette.textPrimary;
+    final chip = MouseRegion(
+      cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+      child: GestureDetector(
+        onTap: enabled ? onTap : null,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
+          decoration: BoxDecoration(
+            color: selected && enabled ? palette.accent : palette.surface,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: selected && enabled ? palette.accent : palette.border,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                format.isAudio
+                    ? Icons.music_note_rounded
+                    : Icons.movie_outlined,
+                size: 14,
+                color: foreground,
+              ),
+              const SizedBox(width: 7),
+              Text(
+                format.label,
+                style: AppType.body(
+                  foreground,
+                  size: 12.5,
+                  weight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(width: 5),
+              Text(
+                format.caption,
+                style: AppType.body(
+                  foreground.withValues(alpha: 0.6),
+                  size: 11,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (enabled) return chip;
+    return Tooltip(message: 'Install ffmpeg to enable', child: chip);
   }
 }

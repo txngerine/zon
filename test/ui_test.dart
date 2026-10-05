@@ -4,6 +4,7 @@ import 'package:zon/app.dart';
 import 'package:zon/core/widgets/filter_tabs.dart';
 import 'package:zon/core/widgets/mono_button.dart';
 import 'package:zon/data/app_state.dart';
+import 'package:zon/data/mock_data.dart';
 import 'package:zon/domain/models/app_settings.dart';
 import 'package:zon/domain/models/download.dart';
 import 'package:zon/domain/models/ui_state.dart';
@@ -22,7 +23,10 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
 
-    final state = AppState();
+    final state = AppState(
+      downloads: MockData.downloads(),
+      history: MockData.history(),
+    );
     addTearDown(state.dispose);
     await tester.pumpWidget(ZonApp(state: state));
     await tester.pump(const Duration(milliseconds: 200));
@@ -98,6 +102,31 @@ void main() {
       expect(find.byType(Dialog), findsNothing);
       expect(state.downloads.length, before + 1);
       expect(state.downloads.first.fileName, 'premium-pack.iso');
+
+      await finish(tester);
+    });
+
+    testWidgets('media links switch the dialog to video/audio mode', (
+      tester,
+    ) async {
+      await pumpZon(tester);
+
+      await tester.tap(find.widgetWithText(MonoButton, 'Add Download').first);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      final urlField = find
+          .descendant(of: find.byType(Dialog), matching: find.byType(TextField))
+          .first;
+      await tester.enterText(urlField, 'https://youtu.be/dQw4w9WgXcQ');
+      await tester.pump(const Duration(milliseconds: 200));
+
+      // No yt-dlp in tests: the dialog offers to install it and blocks start.
+      expect(find.text('yt-dlp is needed for video sites'), findsOneWidget);
+      final start = tester.widget<MonoButton>(
+        find.widgetWithText(MonoButton, 'Download Video'),
+      );
+      expect(start.onTap, isNull);
 
       await finish(tester);
     });

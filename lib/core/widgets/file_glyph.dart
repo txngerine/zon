@@ -27,6 +27,8 @@ IconData fileIconFor(String fileName) {
   if (name.endsWith('.mp3') ||
       name.endsWith('.flac') ||
       name.endsWith('.wav') ||
+      name.endsWith('.m4a') ||
+      name.endsWith('.opus') ||
       name.endsWith('.aac')) {
     return Icons.audio_file_outlined;
   }
@@ -50,15 +52,29 @@ IconData fileIconFor(String fileName) {
 
 /// Rounded-square tile that represents a file inside cards and panels.
 class FileGlyph extends StatelessWidget {
-  const FileGlyph({super.key, required this.fileName, this.size = 44});
+  const FileGlyph({
+    super.key,
+    required this.fileName,
+    this.size = 44,
+    this.thumbnailUrl,
+  });
 
   final String fileName;
   final double size;
+
+  /// Video artwork (YouTube, Reels, ...) shown instead of the type icon.
+  final String? thumbnailUrl;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
     final radius = size * 0.26;
+    final icon = Icon(
+      fileIconFor(fileName),
+      size: size * 0.44,
+      color: palette.textSecondary,
+    );
+    final thumbnail = thumbnailUrl;
 
     return Container(
       width: size,
@@ -72,11 +88,17 @@ class FileGlyph extends StatelessWidget {
         ),
         border: Border.all(color: palette.border),
       ),
-      child: Icon(
-        fileIconFor(fileName),
-        size: size * 0.44,
-        color: palette.textSecondary,
-      ),
+      clipBehavior: Clip.antiAlias,
+      child: thumbnail == null
+          ? icon
+          : Image.network(
+              thumbnail,
+              width: size,
+              height: size,
+              fit: BoxFit.cover,
+              filterQuality: FilterQuality.medium,
+              errorBuilder: (_, _, _) => icon,
+            ),
     );
   }
 }

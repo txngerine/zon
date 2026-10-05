@@ -7,9 +7,16 @@ import 'presentation/shell/zon_shell.dart';
 
 /// Root widget: theming, text scaling and the shell.
 class ZonApp extends StatefulWidget {
-  const ZonApp({super.key, required this.state});
+  const ZonApp({
+    super.key,
+    required this.state,
+    this.nativeIntegration = false,
+  });
 
   final AppState state;
+
+  /// Enables features that need the real native window (drag & drop).
+  final bool nativeIntegration;
 
   @override
   State<ZonApp> createState() => _ZonAppState();
@@ -59,7 +66,7 @@ class _ZonAppState extends State<ZonApp> {
           child: child ?? const SizedBox.shrink(),
         );
       },
-      home: ZonShell(state: widget.state),
+      home: ZonShell(state: widget.state, nativeDrop: widget.nativeIntegration),
     );
   }
 }

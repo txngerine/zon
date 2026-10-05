@@ -73,65 +73,73 @@ class ToastOverlayState extends State<ToastOverlay> {
           left: 0,
           right: 0,
           child: IgnorePointer(
-            child: Center(
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 240),
-                switchInCurve: Curves.easeOutCubic,
-                switchOutCurve: Curves.easeInCubic,
-                transitionBuilder: (child, animation) => FadeTransition(
-                  opacity: animation,
-                  child: SlideTransition(
-                    position: Tween<Offset>(
-                      begin: const Offset(0, -0.4),
-                      end: Offset.zero,
-                    ).animate(animation),
-                    child: child,
+            // The overlay sits above the Scaffold, so give text a Material.
+            child: Material(
+              type: MaterialType.transparency,
+              child: Center(
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 240),
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: Curves.easeInCubic,
+                  transitionBuilder: (child, animation) => FadeTransition(
+                    opacity: animation,
+                    child: SlideTransition(
+                      position: Tween<Offset>(
+                        begin: const Offset(0, -0.4),
+                        end: Offset.zero,
+                      ).animate(animation),
+                      child: child,
+                    ),
                   ),
-                ),
-                child: message == null
-                    ? const SizedBox.shrink()
-                    : Container(
-                        key: ValueKey('${widget.state.toastToken}-$message'),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 11,
-                        ),
-                        decoration: BoxDecoration(
-                          color: palette.surfaceHighest.withValues(alpha: 0.96),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: palette.borderStrong),
-                          boxShadow: [
-                            BoxShadow(
-                              color: palette.shadow.withValues(alpha: 0.5),
-                              blurRadius: 24,
-                              offset: const Offset(0, 10),
+                  child: message == null
+                      ? const SizedBox.shrink()
+                      : Container(
+                          key: ValueKey('${widget.state.toastToken}-$message'),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 11,
+                          ),
+                          decoration: BoxDecoration(
+                            color: palette.surfaceHighest.withValues(
+                              alpha: 0.96,
                             ),
-                          ],
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.arrow_downward_rounded,
-                              size: 14,
-                              color: palette.textPrimary,
-                            ),
-                            const SizedBox(width: 9),
-                            ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 420),
-                              child: Text(
-                                message,
-                                overflow: TextOverflow.ellipsis,
-                                style: AppType.body(
-                                  palette.textPrimary,
-                                  size: 12.5,
-                                  weight: FontWeight.w500,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: palette.borderStrong),
+                            boxShadow: [
+                              BoxShadow(
+                                color: palette.shadow.withValues(alpha: 0.5),
+                                blurRadius: 24,
+                                offset: const Offset(0, 10),
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.arrow_downward_rounded,
+                                size: 14,
+                                color: palette.textPrimary,
+                              ),
+                              const SizedBox(width: 9),
+                              ConstrainedBox(
+                                constraints: const BoxConstraints(
+                                  maxWidth: 420,
+                                ),
+                                child: Text(
+                                  message,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: AppType.body(
+                                    palette.textPrimary,
+                                    size: 12.5,
+                                    weight: FontWeight.w500,
+                                  ),
                                 ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
+                ),
               ),
             ),
           ),

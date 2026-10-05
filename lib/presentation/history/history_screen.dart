@@ -152,9 +152,7 @@ class HistoryScreen extends StatelessWidget {
                         showDownloaded: showDownloaded,
                         showDate: showDate,
                         showDuration: showDuration,
-                        onOpenFolder: () => state.showToast(
-                          'Opened ${entry.fileName} location',
-                        ),
+                        onOpenFolder: () => state.revealHistory(entry),
                         onRedownload: () => state.redownload(entry),
                         onRemove: () => state.removeHistory(entry.id),
                       ),
