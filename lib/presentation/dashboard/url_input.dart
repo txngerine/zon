@@ -5,7 +5,7 @@ import '../../core/theme/zon_palette.dart';
 import '../../core/widgets/mono_button.dart';
 
 /// Quick actions offered underneath the URL field.
-enum QuickAction { clipboard, multiple, media, batch }
+enum QuickAction { clipboard, multiple, media, torrent, batch }
 
 class UrlInputBar extends StatefulWidget {
   const UrlInputBar({
@@ -128,6 +128,11 @@ class _UrlInputBarState extends State<UrlInputBar> {
               icon: Icons.smart_display_outlined,
               label: 'YouTube / Reels / MP3',
               onTap: () => widget.onQuickAction(QuickAction.media),
+            ),
+            _QuickChip(
+              icon: Icons.hub_outlined,
+              label: 'Torrent / Magnet',
+              onTap: () => widget.onQuickAction(QuickAction.torrent),
             ),
             _QuickChip(
               icon: Icons.playlist_add_rounded,

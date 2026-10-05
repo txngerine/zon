@@ -6,7 +6,6 @@ import '../../domain/models/download.dart';
 import '../dialogs/add_download_dialog.dart';
 import 'download_card.dart';
 import 'download_list.dart';
-import 'hero_section.dart';
 import 'speed_panel.dart';
 import 'url_input.dart';
 
@@ -44,8 +43,6 @@ class DashboardScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const HeroSection(),
-                const SizedBox(height: 30),
                 UrlInputBar(
                   compact: narrow,
                   onDownload: (url) =>

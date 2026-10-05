@@ -23,11 +23,13 @@ class BrowserIntegrationDialog extends StatelessWidget {
   }
 
   void _copy(BuildContext context, String label, MediaFormat? format) {
-    Clipboard.setData(
-      ClipboardData(text: LocalApiServer.bookmarklet(format: format)),
+    final code = LocalApiServer.bookmarklet(
+      token: state.settings.apiToken,
+      format: format,
     );
+    Clipboard.setData(ClipboardData(text: code));
     // Don't offer our own bookmarklet back as a "copied link".
-    state.markClipboardSeen(LocalApiServer.bookmarklet(format: format));
+    state.markClipboardSeen(code);
     state.showToast('$label bookmarklet copied');
   }
 
@@ -146,7 +148,8 @@ class BrowserIntegrationDialog extends StatelessWidget {
               const SizedBox(height: 14),
               Text(
                 'Links go to 127.0.0.1:${LocalApiServer.defaultPort} only — '
-                'nothing leaves this computer.',
+                'nothing leaves this computer. The bookmarklet holds a private '
+                'key, so other websites cannot add downloads.',
                 style: AppType.body(palette.textMuted, size: 11),
               ),
             ],

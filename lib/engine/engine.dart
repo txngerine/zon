@@ -13,6 +13,7 @@ class TransferOptions {
     this.cookiesBrowser = 'None',
     this.audioQuality = '320K',
     this.embedMetadata = true,
+    this.seedRatio,
   });
 
   final String userAgent;
@@ -27,6 +28,9 @@ class TransferOptions {
   final String cookiesBrowser;
   final String audioQuality;
   final bool embedMetadata;
+
+  /// Torrents: ratio to seed to after finishing; null stops at 100%.
+  final double? seedRatio;
 }
 
 /// Facts a transfer learns about its download while running.
@@ -40,6 +44,8 @@ class TransferMeta {
     this.httpStatus,
     this.thumbnailUrl,
     this.connections,
+    this.seeders,
+    this.uploadSpeed,
   });
 
   final String? fileName;
@@ -50,6 +56,8 @@ class TransferMeta {
   final int? httpStatus;
   final String? thumbnailUrl;
   final int? connections;
+  final int? seeders;
+  final double? uploadSpeed;
 }
 
 /// Callbacks a running transfer reports through. `AppState` implements this.

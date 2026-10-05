@@ -14,10 +14,11 @@ import '../../domain/models/download.dart';
 import '../../domain/models/media_format.dart';
 import '../../engine/media/media_sites.dart';
 import '../../engine/media/ytdlp.dart';
+import '../../engine/torrent/torrent_engine.dart';
 
 /// `media` is the single-link dialog with video/audio options forced on, for
 /// sites ZON does not recognise by URL.
-enum AddDownloadMode { single, multiple, media, batch }
+enum AddDownloadMode { single, multiple, media, torrent, batch }
 
 /// Polished modal for creating downloads.
 class AddDownloadDialog extends StatefulWidget {
@@ -91,10 +92,15 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
   String _probedUrl = '';
   bool _wholePlaylist = true;
 
+  /// A local `.torrent` picked with the file chooser.
+  String? _torrentFile;
+
   AppState get state => widget.state;
   AddDownloadMode get mode => widget.mode;
   bool get _singleLink =>
-      mode == AddDownloadMode.single || mode == AddDownloadMode.media;
+      mode == AddDownloadMode.single ||
+      mode == AddDownloadMode.media ||
+      mode == AddDownloadMode.torrent;
 
   @override
   void initState() {
@@ -135,6 +141,7 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
     AddDownloadMode.single => 'Add Download',
     AddDownloadMode.multiple => 'Add Multiple Links',
     AddDownloadMode.media => 'Download Video or Audio',
+    AddDownloadMode.torrent => 'Add Torrent',
     AddDownloadMode.batch => 'Batch Download',
   };
 
@@ -152,8 +159,18 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
 
   MediaSite? get _site => detectMediaSite(_url.text.trim());
 
+  /// The single link (or chosen file) goes through aria2.
+  bool get _isTorrent =>
+      _singleLink &&
+      (mode == AddDownloadMode.torrent ||
+          _torrentFile != null ||
+          isTorrentLink(_url.text.trim()));
+
+  bool get _hasAria2 => state.mediaTools?.hasAria2 ?? false;
+
   /// The single link goes through yt-dlp.
   bool get _isMedia =>
+      !_isTorrent &&
       _singleLink &&
       _url.text.trim().isNotEmpty &&
       (mode == AddDownloadMode.media || _site != null);
@@ -164,6 +181,9 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
   bool get _hasFfmpeg => state.mediaTools?.hasFfmpeg ?? false;
 
   bool get _canStart {
+    if (_isTorrent) {
+      return _hasAria2 && (_torrentFile != null || _urls.isNotEmpty);
+    }
     if (_urls.isEmpty) return false;
     if (_isMedia && !_hasYtDlp) return false;
     if (_isMedia && _format.needsFfmpeg && !_hasFfmpeg) return false;
@@ -171,9 +191,12 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
   }
 
   void _onUrlChanged(String value) {
+    if (value.trim().isNotEmpty) _torrentFile = null;
     if (_singleLink && !_nameEdited) {
       final link = value.trim();
-      _fileName.text = link.isEmpty || _isMedia ? '' : fileNameFromUrl(link);
+      _fileName.text = link.isEmpty || _isMedia || _isTorrent
+          ? ''
+          : fileNameFromUrl(link);
     }
     if (_isMedia) {
       _scheduleProbe(value.trim());
@@ -230,6 +253,33 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
     if (!_canStart) return;
     final start = _startImmediately;
     final connections = _connections.round();
+
+    if (_isTorrent) {
+      final file = _torrentFile;
+      if (file != null) {
+        unawaited(
+          state.addTorrentFile(
+            file,
+            savePath: _savePath.text,
+            priority: _priority,
+            startImmediately: start,
+            speedLimit: _speedLimit,
+          ),
+        );
+      } else {
+        state.createDownload(
+          url: _url.text,
+          kind: DownloadKind.torrent,
+          savePath: _savePath.text,
+          priority: _priority,
+          startImmediately: start,
+          createSubfolder: _createSubfolder,
+          speedLimit: _speedLimit,
+        );
+      }
+      Navigator.of(context).pop();
+      return;
+    }
 
     if (_isMedia) {
       final info = _info;
@@ -303,6 +353,7 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
     if (_isMedia && info != null && info.isPlaylist && _wholePlaylist) {
       return 'Download ${info.entries.length} Videos';
     }
+    if (_isTorrent) return 'Start Torrent';
     if (_isMedia) return _format.isAudio ? 'Download Audio' : 'Download Video';
     return _urls.length > 1
         ? 'Start ${_urls.length} Downloads'
@@ -338,7 +389,9 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
                         border: Border.all(color: palette.border),
                       ),
                       child: Icon(
-                        media || mode == AddDownloadMode.media
+                        _isTorrent
+                            ? Icons.hub_outlined
+                            : media || mode == AddDownloadMode.media
                             ? Icons.smart_display_outlined
                             : Icons.arrow_downward_rounded,
                         size: 17,
@@ -360,11 +413,15 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
                           ),
                           const SizedBox(height: 3),
                           Text(switch (mode) {
+                            _ when _isTorrent =>
+                              'Magnet link, .torrent URL or file — via aria2.',
                             _ when media =>
                               '${_site?.name ?? 'Media'} link — pick video or audio.',
                             AddDownloadMode.single =>
                               'Files, YouTube, Reels, TikTok — paste any link.',
                             AddDownloadMode.media => 'YouTube, Instagram Reels, TikTok, X and 1000+ sites.',
+                            AddDownloadMode.torrent =>
+                              'Magnet link, .torrent URL or file — via aria2.',
                             AddDownloadMode.multiple =>
                               'Paste one link per line.',
                             AddDownloadMode.batch =>
@@ -394,6 +451,8 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
                       'https://example.com/file.iso or a YouTube link',
                     AddDownloadMode.media =>
                       'https://www.youtube.com/watch?v=…',
+                    AddDownloadMode.torrent =>
+                      _torrentFile ?? 'magnet:?xt=urn:btih:… or …/file.torrent',
                     _ => 'https://example.com/file-1.iso\nhttps://youtu.be/…',
                   },
                   multiline: !_singleLink,
@@ -403,7 +462,13 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
                 ),
                 const SizedBox(height: 16),
                 if (media) ..._mediaFields(palette),
-                if (_singleLink) ...[
+                if (_isTorrent) ...[
+                  ..._torrentFields(palette),
+                  _label('SAVE LOCATION'),
+                  const SizedBox(height: 8),
+                  _locationField(),
+                  const SizedBox(height: 16),
+                ] else if (_singleLink) ...[
                   Row(
                     children: [
                       Expanded(
@@ -449,17 +514,18 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
                 ],
                 _label('TRANSFER'),
                 const SizedBox(height: 10),
-                _sliderRow(
-                  palette,
-                  label: media ? 'Fragments' : 'Connections',
-                  value: media ? _connections.clamp(1, 8) : _connections,
-                  min: 1,
-                  max: media ? 8 : 32,
-                  divisionLabel:
-                      '${(media ? _connections.clamp(1, 8) : _connections).round()}',
-                  onChanged: (value) => setState(() => _connections = value),
-                ),
-                const SizedBox(height: 14),
+                if (!_isTorrent)
+                  _sliderRow(
+                    palette,
+                    label: media ? 'Fragments' : 'Connections',
+                    value: media ? _connections.clamp(1, 8) : _connections,
+                    min: 1,
+                    max: media ? 8 : 32,
+                    divisionLabel:
+                        '${(media ? _connections.clamp(1, 8) : _connections).round()}',
+                    onChanged: (value) => setState(() => _connections = value),
+                  ),
+                if (!_isTorrent) const SizedBox(height: 14),
                 Row(
                   children: [
                     Expanded(
@@ -753,6 +819,135 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
           ),
       ],
     );
+  }
+
+  List<Widget> _torrentFields(ZonPalette palette) {
+    final file = _torrentFile;
+    final settings = state.settings;
+    if (!_hasAria2) {
+      final progress = state.installProgress;
+      final canInstall = MediaTools.canInstallAria2;
+      return [
+        _panel(
+          palette,
+          Row(
+            children: [
+              Icon(Icons.hub_outlined, size: 20, color: palette.textPrimary),
+              const SizedBox(width: 13),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'aria2 is needed for torrents',
+                      style: AppType.body(
+                        palette.textPrimary,
+                        size: 13,
+                        weight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    SelectableText(
+                      progress != null
+                          ? 'Downloading… ${(progress * 100).round()}%'
+                          : canInstall
+                          ? 'Free and open source, about 5 MB.'
+                          : 'Install it with: ${MediaTools.aria2InstallCommand}',
+                      style: AppType.body(palette.textMuted, size: 11.5),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              MonoButton(
+                label: canInstall ? 'Install' : 'Re-scan',
+                icon: canInstall
+                    ? Icons.download_rounded
+                    : Icons.refresh_rounded,
+                variant: MonoButtonVariant.primary,
+                height: 34,
+                fontSize: 12,
+                onTap: state.mediaToolsBusy
+                    ? null
+                    : () => unawaited(
+                        canInstall
+                            ? state.installAria2()
+                            : state.refreshMediaTools(),
+                      ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+      ];
+    }
+    return [
+      _panel(
+        palette,
+        Row(
+          children: [
+            Icon(Icons.hub_outlined, size: 20, color: palette.textSecondary),
+            const SizedBox(width: 13),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    file == null
+                        ? torrentDisplayName(
+                            _url.text.trim().isEmpty
+                                ? 'Torrent'
+                                : _url.text.trim(),
+                          )
+                        : torrentDisplayName(file),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppType.body(
+                      palette.textPrimary,
+                      size: 13,
+                      weight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    settings.seedAfterDownload
+                        ? 'Seeds to ratio ${settings.seedRatio} after finishing'
+                        : 'Stops sharing as soon as it finishes',
+                    style: AppType.body(palette.textMuted, size: 11.5),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            MonoButton(
+              label: file == null ? 'Choose .torrent' : 'Change',
+              icon: Icons.file_open_outlined,
+              height: 34,
+              fontSize: 12,
+              onTap: _pickTorrent,
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 16),
+    ];
+  }
+
+  Future<void> _pickTorrent() async {
+    final file = await openFile(
+      acceptedTypeGroups: const [
+        XTypeGroup(
+          label: 'Torrent',
+          extensions: ['torrent'],
+          uniformTypeIdentifiers: ['org.bittorrent.torrent', 'public.data'],
+        ),
+      ],
+    );
+    if (file == null || !mounted) return;
+    setState(() {
+      _torrentFile = file.path;
+      _url.text = '';
+    });
   }
 
   Widget _panel(ZonPalette palette, Widget child) {

@@ -12,6 +12,11 @@ A cross-platform (macOS, Windows, Linux) download manager built with Flutter.
   sites via [yt-dlp](https://github.com/yt-dlp/yt-dlp). Pick Best / 1080p /
   720p / 480p MP4, MP3 (128–320 kbps) or M4A. Playlists become one download per
   video.
+- **BitTorrent** — magnet links and `.torrent` files (URL, file picker,
+  drag & drop, Finder "Open With") through a private aria2 daemon: live
+  peers/seeds, pause/resume with piece verification, optional seeding to a
+  ratio. Stalled torrents stop occupying download slots. ZON can be made the
+  system handler for magnet links.
 - **Persistent library** — downloads, history and settings live in
   `library.json` in the app-support folder; interrupted transfers re-queue on
   launch.
@@ -26,8 +31,9 @@ A cross-platform (macOS, Windows, Linux) download manager built with Flutter.
 | --- | --- | --- |
 | yt-dlp | any video/audio site | **Settings › Media › Install** (one click), or `brew install yt-dlp` |
 | ffmpeg | MP3, and video above 720p (merging streams) | `brew install ffmpeg` · `winget install ffmpeg` · `sudo apt install ffmpeg` |
+| aria2 | torrents and magnet links | **Settings › Torrents › Install** on Windows, or `brew install aria2` · `sudo apt install aria2` |
 
-ZON finds both on `PATH` and in the usual Homebrew/WinGet/Scoop locations.
+ZON finds these on `PATH` and in the usual Homebrew/WinGet/Scoop locations.
 Without ffmpeg, video falls back to pre-merged streams and MP3 is disabled.
 
 Linux builds need `libgtk-3-dev libx11-dev libxi-dev` (tray icon).
@@ -36,7 +42,8 @@ Linux builds need `libgtk-3-dev libx11-dev libxi-dev` (tray icon).
 
 **Settings › Integrations › Bookmarklet › Set up** copies a bookmarklet. Clicking it
 on any page sends that page to ZON through a server bound to `127.0.0.1:6412`
-only. A second bookmarklet sends straight to MP3.
+only. A second bookmarklet sends straight to MP3. Each install has its own
+secret key inside the bookmarklet, so other websites cannot add downloads.
 
 ## Instagram, private and age-restricted videos
 

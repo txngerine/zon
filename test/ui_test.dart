@@ -9,6 +9,7 @@ import 'package:zon/domain/models/app_settings.dart';
 import 'package:zon/domain/models/download.dart';
 import 'package:zon/domain/models/ui_state.dart';
 import 'package:zon/presentation/dashboard/download_card.dart';
+import 'package:zon/presentation/dashboard/url_input.dart';
 import 'package:zon/presentation/details/details_panel.dart';
 import 'package:zon/presentation/mobile/mobile_shell.dart';
 import 'package:zon/presentation/shell/status_bar.dart';
@@ -46,11 +47,8 @@ void main() {
       expect(find.byType(Sidebar), findsOneWidget);
       expect(find.byType(StatusBar), findsOneWidget);
       expect(find.byType(DetailsPanel), findsOneWidget);
-      expect(find.text('FAST  •  STABLE  •  POWERFUL'), findsOneWidget);
-      expect(
-        find.textContaining('Without', findRichText: true),
-        findsOneWidget,
-      );
+      expect(find.text('FAST  •  STABLE  •  POWERFUL'), findsNothing);
+      expect(find.byType(UrlInputBar), findsOneWidget);
       expect(find.byType(DownloadCard), findsWidgets);
       expect(find.text('SPEED LIMIT'), findsOneWidget);
       expect(state.selected, isNotNull);
@@ -248,10 +246,7 @@ void main() {
       expect(find.byType(MobileShell), findsOneWidget);
       expect(find.byType(Sidebar), findsNothing);
       expect(find.text('Home'), findsOneWidget);
-      expect(
-        find.textContaining('Without', findRichText: true),
-        findsOneWidget,
-      );
+      expect(find.byType(UrlInputBar), findsOneWidget);
       expect(find.byType(DownloadCard), findsWidgets);
 
       await tester.tap(find.text('Settings'));

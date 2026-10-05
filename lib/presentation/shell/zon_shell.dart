@@ -16,6 +16,7 @@ import '../../core/widgets/zon_logo.dart';
 import '../../data/app_state.dart';
 import '../../domain/models/download.dart';
 import '../../engine/media/media_sites.dart';
+import '../../engine/torrent/torrent_engine.dart';
 import '../../domain/models/ui_state.dart';
 import '../common/dialogs.dart';
 import '../common/toast_overlay.dart';
@@ -117,6 +118,7 @@ class _ZonShellState extends State<ZonShell> with WidgetsBindingObserver {
       final lower = path.toLowerCase();
       if (lower.endsWith('.torrent')) {
         torrents++;
+        unawaited(state.addTorrentFile(path));
         continue;
       }
       try {
@@ -126,11 +128,7 @@ class _ZonShellState extends State<ZonShell> with WidgetsBindingObserver {
     }
     if (!mounted) return;
     if (links.isEmpty) {
-      state.showToast(
-        torrents > 0
-            ? 'Torrents are not supported yet'
-            : 'No links found in the dropped files',
-      );
+      if (torrents == 0) state.showToast('No links found in the dropped files');
       return;
     }
     if (links.length == 1) {
@@ -175,6 +173,16 @@ class _ZonShellState extends State<ZonShell> with WidgetsBindingObserver {
         _openAddDialog(
           AddDownloadMode.media,
           links.isNotEmpty && isMediaUrl(links.first) ? links.first : '',
+        );
+      case QuickAction.torrent:
+        final data = await Clipboard.getData(Clipboard.kTextPlain);
+        final text = data?.text?.trim() ?? '';
+        if (!mounted) return;
+        state.markClipboardSeen(text);
+        final links = extractLinks(text).where(isTorrentLink).toList();
+        _openAddDialog(
+          AddDownloadMode.torrent,
+          links.isEmpty ? '' : links.first,
         );
       case QuickAction.batch:
         _openAddDialog(AddDownloadMode.batch);
@@ -360,7 +368,7 @@ class _ZonShellState extends State<ZonShell> with WidgetsBindingObserver {
                       if (_clipboardOffer case final link?)
                         Positioned(
                           right: 20,
-                          bottom: 48,
+                          bottom: 112,
                           child: _ClipboardBanner(
                             link: link,
                             onAccept: _acceptClipboardOffer,
@@ -496,7 +504,8 @@ class _ZonShellState extends State<ZonShell> with WidgetsBindingObserver {
 /// Pulls every http(s) link out of free text, `.webloc` plists, `.url` and
 /// `.desktop` shortcut files.
 List<String> extractLinks(String text) {
-  final matches = RegExp(r'''https?://[^\s<>"']+''').allMatches(text);
+  final matches = RegExp(r'''(https?://[^\s<>"']+|magnet:\?[^\s<>"']+)''')
+      .allMatches(text);
   return [
     for (final match in matches)
       match.group(0)!.replaceFirst(RegExp(r'[),.;]+$'), ''),
@@ -532,7 +541,7 @@ class _DropHint extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Text(
-                'Links from your browser, .txt lists, .webloc and .url files',
+                'Links, magnets, .torrent files and link lists',
                 style: AppType.body(palette.textMuted, size: 12),
               ),
             ],

@@ -13,6 +13,7 @@ import '../../core/widgets/mono_switch.dart';
 import '../../data/app_state.dart';
 import '../../domain/models/app_settings.dart';
 import '../../domain/models/media_format.dart';
+import '../../engine/media/ytdlp.dart';
 import '../common/browser_integration_dialog.dart';
 
 /// Complete settings screen organised in the sections defined by the product
@@ -201,6 +202,71 @@ class SettingsScreen extends StatelessWidget {
                 ),
               ]),
               _MediaSection(state: state, section: _section, row: _row),
+              _section(context, 'TORRENTS', [
+                _row(
+                  context,
+                  'aria2',
+                  state.installProgress != null &&
+                          !(state.mediaTools?.hasAria2 ?? false)
+                      ? 'Downloading… ${(state.installProgress! * 100).round()}%'
+                      : state.mediaTools?.hasAria2 ?? false
+                      ? 'Found • ${state.mediaTools!.aria2Path}'
+                      : 'Not found — needed for torrents and magnet links. '
+                            'Install with: ${MediaTools.aria2InstallCommand}',
+                  state.mediaTools?.hasAria2 ?? false
+                      ? Icon(
+                          Icons.check_circle_outline_rounded,
+                          size: 18,
+                          color: palette.textPrimary,
+                        )
+                      : MonoButton(
+                          label: MediaTools.canInstallAria2
+                              ? 'Install'
+                              : 'Re-scan',
+                          icon: MediaTools.canInstallAria2
+                              ? Icons.download_rounded
+                              : Icons.refresh_rounded,
+                          onTap: state.mediaToolsBusy
+                              ? null
+                              : () => unawaited(
+                                  MediaTools.canInstallAria2
+                                      ? state.installAria2()
+                                      : state.refreshMediaTools(),
+                                ),
+                        ),
+                ),
+                _switchRow(
+                  context,
+                  'Seed after downloading',
+                  'Keep sharing finished torrents while ZON is open',
+                  _settings.seedAfterDownload,
+                  (value) =>
+                      _update(_settings.copyWith(seedAfterDownload: value)),
+                ),
+                _switchRow(
+                  context,
+                  'Open magnet links with ZON',
+                  'Clicking a magnet link in your browser adds it here',
+                  _settings.magnetHandler,
+                  (value) => _update(_settings.copyWith(magnetHandler: value)),
+                ),
+                _row(
+                  context,
+                  'Seed ratio',
+                  'Stop sharing once this much has been uploaded',
+                  MonoDropdown<String>(
+                    value: _settings.seedRatio,
+                    options: [
+                      for (final ratio in AppSettings.seedRatios)
+                        MonoOption(ratio, '$ratio×'),
+                    ],
+                    onChanged: (value) =>
+                        _update(_settings.copyWith(seedRatio: value)),
+                    height: 34,
+                    width: 180,
+                  ),
+                ),
+              ]),
               _section(context, 'INTEGRATIONS', [
                 _switchRow(
                   context,

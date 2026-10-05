@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:flutter/services.dart';
+
 import 'package:nativeapi/nativeapi.dart' show NotificationManager;
 
 /// OS services `AppState` needs: notifications, revealing files and
@@ -18,6 +20,9 @@ abstract class DesktopBridge {
   Future<void> open(String path);
 
   Future<void> setLaunchAtStartup(bool enabled);
+
+  /// Makes ZON (or stops making it) the handler for magnet: links.
+  Future<void> setMagnetHandler(bool enabled);
 }
 
 class _NoopBridge extends DesktopBridge {
@@ -34,6 +39,9 @@ class _NoopBridge extends DesktopBridge {
 
   @override
   Future<void> setLaunchAtStartup(bool enabled) async {}
+
+  @override
+  Future<void> setMagnetHandler(bool enabled) async {}
 }
 
 /// The real implementation for macOS, Windows and Linux.
@@ -46,12 +54,20 @@ class SystemBridge extends DesktopBridge {
   @override
   Future<void> notify(String title, String body) async {
     try {
-      final manager = NotificationManager.instance;
-      _notifierReady ??= manager.isSupported() && manager.initialize();
-      if (_notifierReady != true) return;
-      manager.show(title, body, 'zon-${_tag++}', '');
+      if (Platform.isMacOS) {
+        // UserNotifications, implemented in the runner's AppDelegate.
+        await const MethodChannel('zon/notify')
+            .invokeMethod<void>('show', {'title': title, 'body': body});
+      } else if (Platform.isLinux) {
+        await Process.run('notify-send', ['--app-name=ZON', title, body]);
+      } else {
+        final manager = NotificationManager.instance;
+        _notifierReady ??= manager.isSupported() && manager.initialize();
+        if (_notifierReady != true) return;
+        manager.show(title, body, 'zon-${_tag++}', '');
+      }
     } catch (_) {
-      // Notifications are best-effort (e.g. no notification daemon).
+      // Notifications are best-effort.
     }
   }
 
@@ -121,6 +137,61 @@ class SystemBridge extends DesktopBridge {
             '[Desktop Entry]\nType=Application\nName=ZON\n'
             'Exec="$exe"\nX-GNOME-Autostart-enabled=true\n',
           );
+        } else if (await file.exists()) {
+          await file.delete();
+        }
+      }
+    } catch (_) {}
+  }
+
+  @override
+  Future<void> setMagnetHandler(bool enabled) async {
+    final exe = Platform.resolvedExecutable;
+    try {
+      if (Platform.isMacOS) {
+        // Info.plist declares the scheme; this makes ZON the default.
+        if (!enabled) return;
+        await Process.run('osascript', [
+          '-l',
+          'JavaScript',
+          '-e',
+          'ObjC.import("CoreServices");'
+              r'$.LSSetDefaultHandlerForURLScheme($("magnet"), $("dev.zon.zon"))',
+        ]);
+      } else if (Platform.isWindows) {
+        const key = r'HKCU\Software\Classes\magnet';
+        if (enabled) {
+          for (final args in [
+            ['add', key, '/ve', '/d', 'URL:Magnet Link', '/f'],
+            ['add', key, '/v', 'URL Protocol', '/d', '', '/f'],
+            [
+              'add',
+              '$key\\shell\\open\\command',
+              '/ve',
+              '/d',
+              '"$exe" "%1"',
+              '/f',
+            ],
+          ]) {
+            await Process.run('reg', args);
+          }
+        } else {
+          await Process.run('reg', ['delete', key, '/f']);
+        }
+      } else {
+        final home = Platform.environment['HOME'] ?? '';
+        final file = File('$home/.local/share/applications/zon-magnet.desktop');
+        if (enabled) {
+          await file.parent.create(recursive: true);
+          await file.writeAsString(
+            '[Desktop Entry]\nType=Application\nName=ZON\nExec="$exe" %u\n'
+            'MimeType=x-scheme-handler/magnet;\nNoDisplay=true\n',
+          );
+          await Process.run('xdg-mime', [
+            'default',
+            'zon-magnet.desktop',
+            'x-scheme-handler/magnet',
+          ]);
         } else if (await file.exists()) {
           await file.delete();
         }

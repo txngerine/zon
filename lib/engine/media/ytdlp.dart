@@ -126,11 +126,16 @@ class MediaTools {
   String override = '';
   String? _ytDlp;
   String? _ffmpeg;
+  String? _aria2;
   String? _version;
   bool _resolved = false;
 
   String? get ytDlpPath => _ytDlp;
   String? get ffmpegPath => _ffmpeg;
+
+  /// aria2c, used for BitTorrent.
+  String? get aria2Path => _aria2;
+  bool get hasAria2 => _aria2 != null;
   String? get version => _version;
   bool get hasYtDlp => _ytDlp != null;
   bool get hasFfmpeg => _ffmpeg != null;
@@ -184,6 +189,7 @@ class MediaTools {
         ? explicit
         : _find('yt-dlp');
     _ffmpeg = _find('ffmpeg');
+    _aria2 = _find('aria2c');
     _version = null;
     if (_ytDlp != null) {
       try {
@@ -254,6 +260,69 @@ class MediaTools {
     await resolve();
     if (!hasYtDlp) {
       throw const MediaToolException('yt-dlp was downloaded but will not run');
+    }
+  }
+
+  /// How to install aria2 by hand on platforms without a standalone build.
+  static String get aria2InstallCommand => Platform.isMacOS
+      ? 'brew install aria2'
+      : Platform.isWindows
+      ? 'winget install aria2.aria2'
+      : 'sudo apt install aria2';
+
+  /// Only Windows has an official standalone aria2 build to fetch.
+  static bool get canInstallAria2 => Platform.isWindows;
+
+  /// Downloads the official Windows build of aria2 into [binDir].
+  Future<void> installAria2({
+    void Function(double progress)? onProgress,
+  }) async {
+    if (!canInstallAria2) {
+      throw MediaToolException('Install aria2 with: $aria2InstallCommand');
+    }
+    const version = '1.37.0';
+    final url = Uri.parse(
+      'https://github.com/aria2/aria2/releases/download/release-$version/'
+      'aria2-$version-win-64bit-build1.zip',
+    );
+    final sep = Platform.pathSeparator;
+    final zip = File('$binDir${sep}aria2.zip');
+    final client = HttpClient()..userAgent = 'ZON/1.0';
+    try {
+      await Directory(binDir).create(recursive: true);
+      final response = await (await client.getUrl(url)).close();
+      if (response.statusCode != 200) {
+        throw MediaToolException(
+          'GitHub responded ${response.statusCode} while fetching aria2',
+        );
+      }
+      final total = response.contentLength;
+      var received = 0;
+      final sink = zip.openWrite();
+      await for (final chunk in response) {
+        sink.add(chunk);
+        received += chunk.length;
+        if (total > 0) onProgress?.call(received / total);
+      }
+      await sink.close();
+      // Windows 10+ ships bsdtar, which reads zip archives.
+      final result = await Process.run('tar', ['-xf', zip.path, '-C', binDir]);
+      if (result.exitCode != 0) {
+        throw MediaToolException('Could not unpack aria2: ${result.stderr}');
+      }
+      final inner = File(
+        '$binDir${sep}aria2-$version-win-64bit-build1${sep}aria2c.exe',
+      );
+      await inner.rename('$binDir${sep}aria2c.exe');
+    } on SocketException catch (error) {
+      throw MediaToolException('Could not reach GitHub: ${error.message}');
+    } finally {
+      client.close(force: true);
+      if (await zip.exists()) await zip.delete();
+    }
+    await resolve();
+    if (!hasAria2) {
+      throw const MediaToolException('aria2 was downloaded but will not run');
     }
   }
 

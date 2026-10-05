@@ -84,6 +84,7 @@ class _DownloadCardState extends State<DownloadCard> {
             FileGlyph(
               fileName: item.fileName,
               thumbnailUrl: item.thumbnailUrl,
+              icon: item.isTorrent ? Icons.hub_outlined : null,
               size: 46,
             ),
             const SizedBox(width: 14),
@@ -163,6 +164,7 @@ class _DownloadCardState extends State<DownloadCard> {
             FileGlyph(
               fileName: item.fileName,
               thumbnailUrl: item.thumbnailUrl,
+              icon: item.isTorrent ? Icons.hub_outlined : null,
               size: 34,
             ),
             const SizedBox(width: 12),
@@ -262,13 +264,21 @@ String sizeLabel(DownloadItem item) {
   if (item.sizeBytes > 0) return formatBytes(item.sizeBytes);
   return switch (item.status) {
     DownloadStatus.downloading when item.downloadedBytes == 0 =>
-      item.isMedia ? 'Fetching info…' : 'Connecting…',
+      item.isMedia || item.isTorrent ? 'Fetching info…' : 'Connecting…',
     _ => 'Unknown size',
   };
 }
 
-/// "16 connections" for files, "MP3 · Audio" for media.
+/// "16 connections" for files, "MP3 · Audio" for media, swarm for torrents.
 String transferLabel(DownloadItem item) {
+  if (item.isTorrent) {
+    final up = item.uploadSpeed > 0
+        ? ' · ↑ ${formatSpeed(item.uploadSpeed)}'
+        : '';
+    String count(int n, String noun) => '$n $noun${n == 1 ? '' : 's'}';
+    return '${count(item.connections, 'peer')} · '
+        '${count(item.seeders, 'seed')}$up';
+  }
   final format = item.mediaFormat;
   if (item.isMedia && format != null) {
     return '${format.label} · ${format.caption}';

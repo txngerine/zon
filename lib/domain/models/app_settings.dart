@@ -31,6 +31,10 @@ class AppSettings {
     this.defaultMediaFormat = MediaFormat.videoBest,
     this.audioQuality = '320K',
     this.embedMetadata = true,
+    this.seedAfterDownload = true,
+    this.seedRatio = '1.0',
+    this.magnetHandler = false,
+    this.apiToken = '',
   });
 
   final String defaultLocation;
@@ -79,6 +83,18 @@ class AppSettings {
   /// Embed title/artist tags and the thumbnail into media files.
   final bool embedMetadata;
 
+  /// Keep uploading finished torrents until [seedRatio] is reached.
+  final bool seedAfterDownload;
+
+  /// Upload/download ratio to seed to, one of [seedRatios].
+  final String seedRatio;
+
+  /// Register ZON as the system handler for magnet: links.
+  final bool magnetHandler;
+
+  /// Secret the browser bookmarklet must send (see `LocalApiServer`).
+  final String apiToken;
+
   static const defaults = AppSettings();
 
   static const speedLimits = [
@@ -103,6 +119,8 @@ class AppSettings {
   ];
 
   static const audioQualities = ['320K', '256K', '192K', '128K'];
+
+  static const seedRatios = ['0.5', '1.0', '2.0', '5.0'];
 
   /// Converts a [speedLimits] label to bytes per second; null for no limit.
   static int? speedLimitBytes(String label) {
@@ -140,6 +158,10 @@ class AppSettings {
     MediaFormat? defaultMediaFormat,
     String? audioQuality,
     bool? embedMetadata,
+    bool? seedAfterDownload,
+    String? seedRatio,
+    bool? magnetHandler,
+    String? apiToken,
   }) {
     return AppSettings(
       defaultLocation: defaultLocation ?? this.defaultLocation,
@@ -171,6 +193,10 @@ class AppSettings {
       defaultMediaFormat: defaultMediaFormat ?? this.defaultMediaFormat,
       audioQuality: audioQuality ?? this.audioQuality,
       embedMetadata: embedMetadata ?? this.embedMetadata,
+      seedAfterDownload: seedAfterDownload ?? this.seedAfterDownload,
+      seedRatio: seedRatio ?? this.seedRatio,
+      magnetHandler: magnetHandler ?? this.magnetHandler,
+      apiToken: apiToken ?? this.apiToken,
     );
   }
 
@@ -203,6 +229,10 @@ class AppSettings {
     'defaultMediaFormat': defaultMediaFormat.name,
     'audioQuality': audioQuality,
     'embedMetadata': embedMetadata,
+    'seedAfterDownload': seedAfterDownload,
+    'seedRatio': seedRatio,
+    'magnetHandler': magnetHandler,
+    'apiToken': apiToken,
   };
 
   static AppSettings fromJson(Map<String, Object?> json) {
@@ -252,6 +282,10 @@ class AppSettings {
       ),
       audioQuality: read('audioQuality', d.audioQuality),
       embedMetadata: read('embedMetadata', d.embedMetadata),
+      seedAfterDownload: read('seedAfterDownload', d.seedAfterDownload),
+      seedRatio: read('seedRatio', d.seedRatio),
+      magnetHandler: read('magnetHandler', d.magnetHandler),
+      apiToken: read('apiToken', d.apiToken),
     );
   }
 }

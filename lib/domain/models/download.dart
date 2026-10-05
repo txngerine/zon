@@ -42,7 +42,10 @@ enum DownloadKind {
   file,
 
   /// Video/audio page (YouTube, Reels, ...), transferred through yt-dlp.
-  media;
+  media,
+
+  /// BitTorrent (magnet link or .torrent), transferred through aria2.
+  torrent;
 
   static DownloadKind fromName(String? name) => DownloadKind.values.firstWhere(
     (value) => value.name == name,
@@ -81,6 +84,8 @@ class DownloadItem {
     this.speedLimit = 'No Limit',
     this.nameLocked = false,
     this.phase,
+    this.seeders = 0,
+    this.uploadSpeed = 0,
   });
 
   final String id;
@@ -123,6 +128,12 @@ class DownloadItem {
   /// Post-processing step shown while [status] is `verifying`
   /// (e.g. "Merging", "Converting to MP3").
   final String? phase;
+
+  /// Torrent swarm stats (live only, not persisted). Peers use [connections].
+  final int seeders;
+  final double uploadSpeed;
+
+  bool get isTorrent => kind == DownloadKind.torrent;
 
   bool get isMedia => kind == DownloadKind.media;
 
@@ -184,6 +195,8 @@ class DownloadItem {
     bool? nameLocked,
     String? phase,
     bool clearPhase = false,
+    int? seeders,
+    double? uploadSpeed,
   }) {
     return DownloadItem(
       id: id,
@@ -216,6 +229,8 @@ class DownloadItem {
       speedLimit: speedLimit ?? this.speedLimit,
       nameLocked: nameLocked ?? this.nameLocked,
       phase: clearPhase ? null : (phase ?? this.phase),
+      seeders: seeders ?? this.seeders,
+      uploadSpeed: uploadSpeed ?? this.uploadSpeed,
     );
   }
 

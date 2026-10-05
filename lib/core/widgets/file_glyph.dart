@@ -57,6 +57,7 @@ class FileGlyph extends StatelessWidget {
     required this.fileName,
     this.size = 44,
     this.thumbnailUrl,
+    this.icon,
   });
 
   final String fileName;
@@ -65,12 +66,15 @@ class FileGlyph extends StatelessWidget {
   /// Video artwork (YouTube, Reels, ...) shown instead of the type icon.
   final String? thumbnailUrl;
 
+  /// Overrides the icon picked from [fileName].
+  final IconData? icon;
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
     final radius = size * 0.26;
-    final icon = Icon(
-      fileIconFor(fileName),
+    final glyph = Icon(
+      icon ?? fileIconFor(fileName),
       size: size * 0.44,
       color: palette.textSecondary,
     );
@@ -90,14 +94,14 @@ class FileGlyph extends StatelessWidget {
       ),
       clipBehavior: Clip.antiAlias,
       child: thumbnail == null
-          ? icon
+          ? glyph
           : Image.network(
               thumbnail,
               width: size,
               height: size,
               fit: BoxFit.cover,
               filterQuality: FilterQuality.medium,
-              errorBuilder: (_, _, _) => icon,
+              errorBuilder: (_, _, _) => glyph,
             ),
     );
   }

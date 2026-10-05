@@ -15,6 +15,8 @@ import '../engine/http_engine.dart';
 import '../engine/media/media_engine.dart';
 import '../engine/media/media_sites.dart';
 import '../engine/media/ytdlp.dart';
+import '../engine/torrent/torrent_engine.dart';
+import '../platform/local_api.dart';
 import '../platform/desktop_bridge.dart';
 import 'library_store.dart';
 
@@ -55,6 +57,7 @@ class AppState extends ChangeNotifier implements TransferListener {
   AppState({
     TransferEngine? httpEngine,
     TransferEngine? mediaEngine,
+    TransferEngine? torrentEngine,
     MediaTools? mediaTools,
     this._store,
     this._desktop = const DesktopBridge.noop(),
@@ -66,9 +69,11 @@ class AppState extends ChangeNotifier implements TransferListener {
     this.dataDir = '',
   }) : _http = httpEngine ?? IdleEngine(),
        _media = mediaEngine ?? IdleEngine(),
+       _torrent = torrentEngine ?? IdleEngine(),
        _tools = mediaTools {
     _http.listener = this;
     _media.listener = this;
+    _torrent.listener = this;
     _settings = settings ?? AppSettings.defaults;
     _downloads = downloads ?? const [];
     _history = history ?? const [];
@@ -100,6 +105,10 @@ class AppState extends ChangeNotifier implements TransferListener {
       }
     }
 
+    if (settings.apiToken.isEmpty) {
+      settings = settings.copyWith(apiToken: LocalApiServer.newToken());
+    }
+
     final tools = MediaTools(binDir: '${support.path}${sep}bin')
       ..override = settings.ytDlpPath;
     final restored = [
@@ -126,6 +135,10 @@ class AppState extends ChangeNotifier implements TransferListener {
     final state = AppState(
       httpEngine: HttpEngine(stateDir: '${support.path}${sep}parts'),
       mediaEngine: MediaEngine(tools: tools),
+      torrentEngine: TorrentEngine(
+        tools: tools,
+        stateDir: '${support.path}${sep}torrent',
+      ),
       mediaTools: tools,
       store: store,
       desktop: SystemBridge(),
@@ -136,6 +149,8 @@ class AppState extends ChangeNotifier implements TransferListener {
       queuePaused: snapshot?.queuePaused ?? false,
       dataDir: support.path,
     );
+    // Persist a freshly generated API key right away.
+    state._scheduleSave();
     // Media downloads wait until we know whether yt-dlp exists.
     state._toolsPending = true;
     unawaited(
@@ -145,6 +160,37 @@ class AppState extends ChangeNotifier implements TransferListener {
       }),
     );
     return state;
+  }
+
+  /// The browser/second-instance key saved by a previous launch.
+  static Future<String?> storedApiToken() async {
+    try {
+      final support = await getApplicationSupportDirectory();
+      final sep = Platform.pathSeparator;
+      final snapshot = await LibraryStore(
+        File('${support.path}${sep}library.json'),
+      ).load();
+      final token = snapshot?.settings.apiToken ?? '';
+      return token.isEmpty ? null : token;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Adds a link handed over by the OS (magnet click, "Open with" a
+  /// `.torrent`, or a second launch).
+  Future<void> addIncoming(String link) async {
+    final value = link.trim();
+    final isLocalTorrent =
+        value.toLowerCase().endsWith('.torrent') &&
+        !value.contains('://') &&
+        await File(value).exists();
+    if (isLocalTorrent) {
+      _section = AppSection.all;
+      await addTorrentFile(value);
+      return;
+    }
+    await addFromBrowser(value);
   }
 
   static Future<String?> _safeDownloadsDir() async {
@@ -157,6 +203,7 @@ class AppState extends ChangeNotifier implements TransferListener {
 
   final TransferEngine _http;
   final TransferEngine _media;
+  final TransferEngine _torrent;
   final MediaTools? _tools;
   final LibraryStore? _store;
   final DesktopBridge _desktop;
@@ -172,6 +219,14 @@ class AppState extends ChangeNotifier implements TransferListener {
   /// Downloads currently handed to an engine.
   final Set<String> _running = {};
   final Map<String, _Progress> _pending = {};
+
+  /// When each running download last received data.
+  final Map<String, DateTime> _lastGrowth = {};
+
+  /// A torrent without data for this long stops occupying a download slot,
+  /// so a dead swarm cannot block the queue behind it.
+  @visibleForTesting
+  Duration stalledAfter = const Duration(seconds: 90);
 
   Timer? _timer;
   DateTime _lastTick = DateTime.now();
@@ -234,6 +289,17 @@ class AppState extends ChangeNotifier implements TransferListener {
       if (item.id == id) return item;
     }
     return null;
+  }
+
+  /// Active downloads that occupy a slot (stalled torrents do not).
+  int get _slotsUsed {
+    final now = DateTime.now();
+    return _downloads.where((item) {
+      if (item.status != DownloadStatus.downloading) return false;
+      if (!item.isTorrent) return true;
+      final grew = _lastGrowth[item.id];
+      return grew == null || now.difference(grew) < stalledAfter;
+    }).length;
   }
 
   int get activeCount => _downloads
@@ -413,8 +479,14 @@ class AppState extends ChangeNotifier implements TransferListener {
     final link = url.trim();
     final site = detectMediaSite(link);
     final resolvedKind =
-        kind ?? (site != null ? DownloadKind.media : DownloadKind.file);
+        kind ??
+        (isTorrentLink(link)
+            ? DownloadKind.torrent
+            : site != null
+            ? DownloadKind.media
+            : DownloadKind.file);
     final isMedia = resolvedKind == DownloadKind.media;
+    final isTorrent = resolvedKind == DownloadKind.torrent;
     final format = isMedia
         ? (mediaFormat ?? _settings.defaultMediaFormat)
         : null;
@@ -424,10 +496,16 @@ class AppState extends ChangeNotifier implements TransferListener {
         ? (isMedia ? _withExtension(typed, format!) : typed)
         : isMedia
         ? '${site?.name ?? 'Media'} ${format!.isAudio ? 'audio' : 'video'}'
+        : isTorrent
+        ? torrentDisplayName(link)
         : fileNameFromUrl(link, fallback: 'download.bin');
 
     final uri = Uri.tryParse(link);
-    final host = (uri?.host.isNotEmpty ?? false) ? uri!.host : 'unknown';
+    final host = isTorrent
+        ? 'BitTorrent'
+        : (uri?.host.isNotEmpty ?? false)
+        ? uri!.host
+        : 'unknown';
     var path = (savePath == null || savePath.trim().isEmpty)
         ? _settings.defaultLocation
         : savePath.trim();
@@ -440,14 +518,14 @@ class AppState extends ChangeNotifier implements TransferListener {
     final canStart =
         startImmediately &&
         !_queuePaused &&
-        !(isMedia && _toolsPending) &&
-        activeCount < _settings.maxSimultaneous;
+        !((isMedia || isTorrent) && _toolsPending) &&
+        _slotsUsed < _settings.maxSimultaneous;
 
     final item = DownloadItem(
       id: 'z-${now.microsecondsSinceEpoch.toRadixString(36)}',
       fileName: name,
       url: link,
-      source: site?.name ?? host,
+      source: isTorrent ? 'BitTorrent' : (site?.name ?? host),
       sizeBytes: 0,
       downloadedBytes: 0,
       status: DownloadStatus.queued,
@@ -456,6 +534,8 @@ class AppState extends ChangeNotifier implements TransferListener {
       priority: priority,
       contentType: isMedia
           ? (format!.isAudio ? 'audio/*' : 'video/mp4')
+          : isTorrent
+          ? 'application/x-bittorrent'
           : _contentTypeFor(name),
       addedAt: now,
       lastActivity: now,
@@ -477,6 +557,42 @@ class AppState extends ChangeNotifier implements TransferListener {
         canStart ? 'Downloading ${item.fileName}' : 'Queued ${item.fileName}',
       );
     }
+    return _find(item.id) ?? item;
+  }
+
+  /// Adds a local `.torrent` file. A copy is kept in the app folder so the
+  /// download survives the original being moved or deleted.
+  Future<DownloadItem> addTorrentFile(
+    String path, {
+    String? savePath,
+    DownloadPriority priority = DownloadPriority.normal,
+    bool startImmediately = true,
+    String? speedLimit,
+  }) async {
+    var source = path;
+    if (dataDir.isNotEmpty) {
+      final sep = Platform.pathSeparator;
+      final dir = Directory('$dataDir${sep}torrents');
+      await dir.create(recursive: true);
+      final name = path.split(RegExp(r'[/\\]')).last;
+      final stamp = DateTime.now().microsecondsSinceEpoch.toRadixString(36);
+      source = (await File(path).copy('${dir.path}$sep$stamp-$name')).path;
+    }
+    final item = createDownload(
+      url: source,
+      kind: DownloadKind.torrent,
+      savePath: savePath,
+      priority: priority,
+      startImmediately: startImmediately,
+      speedLimit: speedLimit,
+      notify: false,
+    );
+    // Name it after the original file, not the stamped copy.
+    _update(
+      item.id,
+      (current) => current.copyWith(fileName: torrentDisplayName(path)),
+    );
+    showToast('Added ${torrentDisplayName(path)}');
     return _find(item.id) ?? item;
   }
 
@@ -641,7 +757,7 @@ class AppState extends ChangeNotifier implements TransferListener {
   }
 
   void resumeAll() {
-    var slots = _settings.maxSimultaneous - activeCount;
+    var slots = _settings.maxSimultaneous - _slotsUsed;
     final candidates = _downloads
         .where(
           (item) =>
@@ -698,6 +814,9 @@ class AppState extends ChangeNotifier implements TransferListener {
     if (next.startOnStartup != previous.startOnStartup) {
       unawaited(_desktop.setLaunchAtStartup(next.startOnStartup));
     }
+    if (next.magnetHandler != previous.magnetHandler) {
+      unawaited(_desktop.setMagnetHandler(next.magnetHandler));
+    }
     if (next.ytDlpPath != previous.ytDlpPath) {
       _tools?.override = next.ytDlpPath;
       unawaited(refreshMediaTools());
@@ -709,8 +828,13 @@ class AppState extends ChangeNotifier implements TransferListener {
   }
 
   void resetSettings() {
-    final location = _settings.defaultLocation;
-    updateSettings(AppSettings.defaults.copyWith(defaultLocation: location));
+    updateSettings(
+      AppSettings.defaults.copyWith(
+        defaultLocation: _settings.defaultLocation,
+        // Keep the key so existing bookmarklets keep working.
+        apiToken: _settings.apiToken,
+      ),
+    );
     showToast('Settings restored to defaults');
   }
 
@@ -814,6 +938,31 @@ class AppState extends ChangeNotifier implements TransferListener {
     }
   }
 
+  Future<bool> installAria2() async {
+    final tools = _tools;
+    if (tools == null || _toolsBusy) return false;
+    _toolsBusy = true;
+    _installProgress = 0;
+    notifyListeners();
+    try {
+      await tools.installAria2(
+        onProgress: (value) {
+          _installProgress = value;
+          notifyListeners();
+        },
+      );
+      showToast('aria2 installed — torrents are ready');
+      return true;
+    } catch (error) {
+      showToast('$error');
+      return false;
+    } finally {
+      _toolsBusy = false;
+      _installProgress = null;
+      if (!_disposed) notifyListeners();
+    }
+  }
+
   Future<void> clearMediaCache() async {
     await _tools?.clearCache();
     showToast('yt-dlp cache cleared');
@@ -845,8 +994,9 @@ class AppState extends ChangeNotifier implements TransferListener {
     final uri = Uri.tryParse(value);
     final isLink =
         uri != null &&
-        (uri.scheme == 'http' || uri.scheme == 'https') &&
-        uri.host.contains('.') &&
+        ((uri.scheme == 'http' || uri.scheme == 'https') &&
+                uri.host.contains('.') ||
+            isTorrentLink(value) && value.startsWith('magnet:')) &&
         !value.contains(RegExp(r'\s'));
     if (!isLink) return null;
     if (_downloads.any((item) => item.url == value)) return null;
@@ -1028,6 +1178,8 @@ class AppState extends ChangeNotifier implements TransferListener {
         httpStatus: meta.httpStatus,
         thumbnailUrl: meta.thumbnailUrl,
         connections: meta.connections,
+        seeders: meta.seeders,
+        uploadSpeed: meta.uploadSpeed,
       );
     });
   }
@@ -1145,6 +1297,10 @@ class AppState extends ChangeNotifier implements TransferListener {
         if (item.status == DownloadStatus.downloading)
           () {
             final progress = pending[item.id];
+            if (progress != null &&
+                progress.downloaded > item.downloadedBytes) {
+              _lastGrowth[item.id] = stamp;
+            }
             return item.copyWith(
               downloadedBytes: progress?.downloaded,
               speed: progress?.speed,
@@ -1182,7 +1338,7 @@ class AppState extends ChangeNotifier implements TransferListener {
 
   void _promoteQueued() {
     if (_queuePaused) return;
-    var slots = _settings.maxSimultaneous - activeCount;
+    var slots = _settings.maxSimultaneous - _slotsUsed;
     if (slots <= 0) return;
 
     final rank = {
@@ -1194,7 +1350,7 @@ class AppState extends ChangeNotifier implements TransferListener {
               (item) =>
                   item.status == DownloadStatus.queued &&
                   // Media waits until we know whether yt-dlp exists.
-                  !(item.isMedia && _toolsPending),
+                  !((item.isMedia || item.isTorrent) && _toolsPending),
             )
             .toList()
           ..sort((a, b) {
@@ -1214,7 +1370,7 @@ class AppState extends ChangeNotifier implements TransferListener {
     stopTicking();
     _scheduleSave();
     await _store?.flush();
-    await Future.wait([_http.dispose(), _media.dispose()]);
+    await Future.wait([_http.dispose(), _media.dispose(), _torrent.dispose()]);
   }
 
   @override
@@ -1224,6 +1380,7 @@ class AppState extends ChangeNotifier implements TransferListener {
     unawaited(_store?.flush());
     unawaited(_http.dispose());
     unawaited(_media.dispose());
+    unawaited(_torrent.dispose());
     super.dispose();
   }
 
@@ -1231,12 +1388,17 @@ class AppState extends ChangeNotifier implements TransferListener {
   // Internals
   // --------------------------------------------------------------------------
 
-  TransferEngine _engineFor(DownloadItem item) => item.isMedia ? _media : _http;
+  TransferEngine _engineFor(DownloadItem item) => switch (item.kind) {
+    DownloadKind.file => _http,
+    DownloadKind.media => _media,
+    DownloadKind.torrent => _torrent,
+  };
 
   void _start(String id) {
     final item = _find(id);
     if (item == null || _running.contains(id)) return;
     _running.add(id);
+    _lastGrowth[id] = DateTime.now();
     _queueOrder = _queueOrder.where((qid) => qid != id).toList();
     _update(
       id,
@@ -1288,6 +1450,9 @@ class AppState extends ChangeNotifier implements TransferListener {
     cookiesBrowser: _settings.cookiesBrowser,
     audioQuality: _settings.audioQuality,
     embedMetadata: _settings.embedMetadata,
+    seedRatio: _settings.seedAfterDownload
+        ? double.tryParse(_settings.seedRatio) ?? 1.0
+        : null,
   );
 
   void _changed() {

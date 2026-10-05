@@ -93,6 +93,7 @@ class DetailsView extends StatelessWidget {
               FileGlyph(
                 fileName: item.fileName,
                 thumbnailUrl: item.thumbnailUrl,
+                icon: item.isTorrent ? Icons.hub_outlined : null,
                 size: 54,
               ),
               const SizedBox(width: 14),
@@ -199,7 +200,11 @@ class DetailsView extends StatelessWidget {
                 : '—',
           ),
           _StatRow(label: 'ETA', value: eta == null ? '—' : formatEta(eta)),
-          if (item.isMedia)
+          if (item.isTorrent) ...[
+            _StatRow(label: 'Peers', value: '${item.connections}'),
+            _StatRow(label: 'Seeds', value: '${item.seeders}'),
+            _StatRow(label: 'Upload', value: formatSpeed(item.uploadSpeed)),
+          ] else if (item.isMedia)
             _StatRow(label: 'Format', value: transferLabel(item))
           else
             _StatRow(label: 'Connections', value: '${item.connections}'),
@@ -253,6 +258,8 @@ class DetailsView extends StatelessWidget {
             label: 'Resume support',
             value: !item.resumeSupported
                 ? 'No'
+                : item.isTorrent
+                ? 'Yes — piece-verified'
                 : item.isMedia
                 ? 'Yes — continues partial streams'
                 : 'Yes — byte ranges',

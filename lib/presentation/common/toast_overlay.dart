@@ -69,7 +69,7 @@ class ToastOverlayState extends State<ToastOverlay> {
       children: [
         widget.child,
         Positioned(
-          top: 22,
+          bottom: 58,
           left: 0,
           right: 0,
           child: IgnorePointer(
@@ -85,7 +85,7 @@ class ToastOverlayState extends State<ToastOverlay> {
                     opacity: animation,
                     child: SlideTransition(
                       position: Tween<Offset>(
-                        begin: const Offset(0, -0.4),
+                        begin: const Offset(0, 0.4),
                         end: Offset.zero,
                       ).animate(animation),
                       child: child,
