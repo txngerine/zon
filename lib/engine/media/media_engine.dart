@@ -5,6 +5,7 @@ import 'dart:io';
 import '../../domain/models/download.dart';
 import '../../domain/models/media_format.dart';
 import '../engine.dart';
+import 'media_sites.dart';
 import 'ytdlp.dart';
 
 /// Downloads video/audio pages (YouTube, Reels, TikTok, ...) through yt-dlp.
@@ -145,6 +146,8 @@ class MediaEngine implements TransferEngine {
       '--no-simulate',
       '--no-quiet',
       '--no-playlist',
+      // Collections are expanded by AppState; never fetch a whole list here.
+      if (looksLikePlaylist(item.url)) ...['--playlist-items', '1'],
       '--continue',
       '--no-mtime',
       '--no-warnings',

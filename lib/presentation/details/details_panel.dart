@@ -251,7 +251,11 @@ class DetailsView extends StatelessWidget {
           _StatRow(label: 'Content type', value: item.contentType),
           _StatRow(
             label: 'Resume support',
-            value: item.resumeSupported ? 'Yes — byte ranges' : 'No',
+            value: !item.resumeSupported
+                ? 'No'
+                : item.isMedia
+                ? 'Yes — continues partial streams'
+                : 'Yes — byte ranges',
           ),
           _StatRow(label: 'Created', value: formatDateTime(item.addedAt)),
           _StatRow(

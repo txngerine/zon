@@ -65,3 +65,24 @@ MediaSite? detectMediaSite(String url) {
 }
 
 bool isMediaUrl(String url) => detectMediaSite(url) != null;
+
+/// True for links that name a whole collection (playlist, channel) rather
+/// than one video. These are expanded into one download per entry.
+bool looksLikePlaylist(String url) {
+  final site = detectMediaSite(url);
+  final uri = Uri.tryParse(url.trim());
+  if (site == null || uri == null) return false;
+  final query = uri.queryParameters;
+  final path = uri.path.toLowerCase();
+  if (site.name.startsWith('YouTube')) {
+    if (path.startsWith('/playlist')) return true;
+    if (query.containsKey('list') && !query.containsKey('v')) return true;
+    return path.startsWith('/@') ||
+        path.startsWith('/channel/') ||
+        path.startsWith('/c/') ||
+        path.startsWith('/user/');
+  }
+  if (site.name == 'SoundCloud') return path.contains('/sets/');
+  if (site.name == 'Bandcamp') return path.startsWith('/album/');
+  return false;
+}

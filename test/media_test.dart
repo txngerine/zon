@@ -68,7 +68,46 @@ void main() {
     });
   });
 
+  test('looksLikePlaylist separates collections from single videos', () {
+    expect(
+      looksLikePlaylist('https://www.youtube.com/playlist?list=PL123'),
+      isTrue,
+    );
+    expect(looksLikePlaylist('https://www.youtube.com/@channel'), isTrue);
+    expect(
+      looksLikePlaylist('https://www.youtube.com/watch?v=a&list=PL123'),
+      isFalse,
+    );
+    expect(looksLikePlaylist('https://youtu.be/abc'), isFalse);
+    expect(looksLikePlaylist('https://soundcloud.com/a/sets/b'), isTrue);
+    expect(looksLikePlaylist('https://example.com/list?list=1'), isFalse);
+  });
+
   group('MediaEngine.buildArgs', () {
+    test('playlist links are capped to one item as a safety net', () {
+      final now = DateTime.now();
+      final item = DownloadItem(
+        id: 'p',
+        fileName: 'x',
+        url: 'https://www.youtube.com/playlist?list=PL1',
+        source: 'YouTube',
+        sizeBytes: 0,
+        downloadedBytes: 0,
+        status: DownloadStatus.queued,
+        savePath: '/tmp',
+        addedAt: now,
+        lastActivity: now,
+        connections: 4,
+        kind: DownloadKind.media,
+      );
+      final args = MediaEngine.buildArgs(
+        item,
+        const TransferOptions(),
+        format: MediaFormat.videoBest,
+      );
+      expect(args, containsAllInOrder(['--playlist-items', '1']));
+    });
+
     const options = TransferOptions(audioQuality: '192K');
 
     test('MP3 extracts audio at the chosen bitrate', () {

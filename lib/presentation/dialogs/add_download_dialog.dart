@@ -267,18 +267,33 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
       return;
     }
 
-    for (final link in List<String>.of(_urls)) {
+    if (_singleLink) {
       state.createDownload(
-        url: link,
-        fileName: _singleLink ? _fileName.text : null,
+        url: _url.text,
+        fileName: _fileName.text,
         savePath: _savePath.text,
         connections: connections,
         priority: _priority,
         startImmediately: start,
         createSubfolder: _createSubfolder,
-        mediaFormat: _format,
         speedLimit: _speedLimit,
       );
+    } else {
+      for (final link in List<String>.of(_urls)) {
+        // Playlists in the list expand into their videos.
+        unawaited(
+          state.addLink(
+            link,
+            savePath: _savePath.text,
+            connections: connections,
+            priority: _priority,
+            startImmediately: start,
+            createSubfolder: _createSubfolder,
+            mediaFormat: _format,
+            speedLimit: _speedLimit,
+          ),
+        );
+      }
     }
     Navigator.of(context).pop();
   }

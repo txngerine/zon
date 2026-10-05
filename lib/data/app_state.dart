@@ -857,14 +857,66 @@ class AppState extends ChangeNotifier implements TransferListener {
   void markClipboardSeen(String? text) => _lastClipboard = text?.trim();
 
   /// Entry point for links sent by the browser bookmarklet.
-  void addFromBrowser(String url, {MediaFormat? format}) {
+  Future<void> addFromBrowser(String url, {MediaFormat? format}) async {
     _section = AppSection.all;
-    final item = createDownload(
-      url: url,
+    final count = await addLink(
+      url,
       mediaFormat: format,
       createdVia: 'Browser',
     );
-    unawaited(_desktop.notify('Added to ZON', item.fileName));
+    unawaited(
+      _desktop.notify(
+        'Added to ZON',
+        count == 1 ? (selected?.fileName ?? url) : '$count downloads',
+      ),
+    );
+  }
+
+  /// Adds [url], expanding playlists and channels into one download per
+  /// video. Returns how many downloads were created.
+  Future<int> addLink(
+    String url, {
+    MediaFormat? mediaFormat,
+    String? savePath,
+    int? connections,
+    DownloadPriority priority = DownloadPriority.normal,
+    bool startImmediately = true,
+    bool createSubfolder = false,
+    String? speedLimit,
+    String createdVia = 'Manual',
+  }) async {
+    if (looksLikePlaylist(url) && (_tools?.hasYtDlp ?? false)) {
+      showToast('Reading playlist…');
+      try {
+        final info = await probeMedia(url);
+        if (info.isPlaylist && info.entries.isNotEmpty) {
+          return createMediaBatch(
+            info.entries,
+            format: mediaFormat ?? _settings.defaultMediaFormat,
+            savePath: savePath,
+            connections: connections,
+            priority: priority,
+            startImmediately: startImmediately,
+            createSubfolder: createSubfolder,
+            speedLimit: speedLimit,
+          );
+        }
+      } catch (_) {
+        // Fall through: the engine downloads just the first entry.
+      }
+    }
+    createDownload(
+      url: url,
+      mediaFormat: mediaFormat,
+      savePath: savePath,
+      connections: connections,
+      priority: priority,
+      startImmediately: startImmediately,
+      createSubfolder: createSubfolder,
+      speedLimit: speedLimit,
+      createdVia: createdVia,
+    );
+    return 1;
   }
 
   // --------------------------------------------------------------------------
