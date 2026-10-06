@@ -388,9 +388,12 @@ void main() {
       'constant updates still get written (throttle, not debounce)',
       () async {
         final dir = await Directory.systemTemp.createTemp('zon_store_');
-        addTearDown(() => dir.delete(recursive: true));
         final file = File('${dir.path}/library.json');
         final store = LibraryStore(file);
+        addTearDown(() async {
+          await store.flush();
+          await dir.delete(recursive: true);
+        });
         LibrarySnapshot snapshot() => LibrarySnapshot(
           downloads: MockData.downloads(),
           history: const [],
