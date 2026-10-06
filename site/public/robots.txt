@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://zon.vercel.app/sitemap.xml
