@@ -4,6 +4,7 @@
 /// selection (see `MediaEngine`).
 enum MediaFormat {
   videoBest('Best video', 'MP4'),
+  video2160('4K', 'MP4'),
   video1080('1080p', 'MP4'),
   video720('720p', 'MP4'),
   video480('480p', 'MP4'),
@@ -19,6 +20,7 @@ enum MediaFormat {
 
   /// Maximum video height, or null for "no cap".
   int? get maxHeight => switch (this) {
+    MediaFormat.video2160 => 2160,
     MediaFormat.video1080 => 1080,
     MediaFormat.video720 => 720,
     MediaFormat.video480 => 480,
@@ -31,8 +33,9 @@ enum MediaFormat {
     _ => 'mp4',
   };
 
-  /// Formats that cannot be produced without ffmpeg.
-  bool get needsFfmpeg => this == audioMp3;
+  /// Formats that cannot be produced without ffmpeg: audio extraction, and
+  /// any video above 720p, which only exists as separate streams to merge.
+  bool get needsFfmpeg => this == audioMp3 || (maxHeight ?? 0) > 720;
 
   static MediaFormat fromName(String? name) => MediaFormat.values.firstWhere(
     (value) => value.name == name,

@@ -9,9 +9,9 @@ A cross-platform (macOS, Windows, Linux) download manager built with Flutter.
   automatically when a server answers `429 Too Many Requests`.
 - **Video & audio** — YouTube (videos, Shorts, playlists, channels), Instagram
   Reels, TikTok, X, Facebook, Vimeo, SoundCloud, Twitch, Reddit and 1000+ more
-  sites via [yt-dlp](https://github.com/yt-dlp/yt-dlp). Pick Best / 1080p /
-  720p / 480p MP4, MP3 (128–320 kbps) or M4A. Playlists become one download per
-  video.
+  sites via [yt-dlp](https://github.com/yt-dlp/yt-dlp). Pick Best / 4K /
+  1080p / 720p / 480p MP4, MP3 (128–320 kbps) or M4A. Playlists become one
+  download per video.
 - **BitTorrent** — magnet links and `.torrent` files (URL, file picker,
   drag & drop, Finder "Open With") through a private aria2 daemon: live
   peers/seeds, pause/resume with piece verification, optional seeding to a

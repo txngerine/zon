@@ -623,8 +623,8 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
       if (!_hasFfmpeg) ...[
         const SizedBox(height: 10),
         Text(
-          'ffmpeg not found: MP3 is unavailable and video is limited to '
-          'single-file streams (often 720p or lower).',
+          'ffmpeg not found: MP3, 1080p and 4K need it. Best video then '
+          'falls back to single-file streams (often 720p or lower).',
           style: AppType.body(palette.textMuted, size: 11.5),
         ),
       ],

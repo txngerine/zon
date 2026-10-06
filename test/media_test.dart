@@ -141,6 +141,44 @@ void main() {
       expect(args[args.indexOf('--concurrent-fragments') + 1], '8');
     });
 
+    test('4K stops at 2160p and sorts closest to it', () {
+      final args = MediaEngine.buildArgs(
+        _media(MediaFormat.video2160),
+        options,
+        format: MediaFormat.video2160,
+        ffmpeg: '/usr/bin/ffmpeg',
+      );
+      expect(
+        args[args.indexOf('-f') + 1],
+        'bv*[height<=2160]+ba/b[height<=2160]/bv*+ba/b',
+      );
+      expect(args[args.indexOf('-S') + 1], 'res:2160,vcodec:h264,acodec:aac');
+      expect(args, containsAllInOrder(['--merge-output-format', 'mp4']));
+    });
+
+    test('best video leaves the height uncapped', () {
+      final args = MediaEngine.buildArgs(
+        _media(MediaFormat.videoBest),
+        options,
+        format: MediaFormat.videoBest,
+        ffmpeg: '/usr/bin/ffmpeg',
+      );
+      expect(args[args.indexOf('-f') + 1], 'bv*+ba/b/bv*+ba/b');
+      expect(args[args.indexOf('-S') + 1], 'res,vcodec:h264,acodec:aac');
+      expect(MediaFormat.videoBest.maxHeight, isNull);
+      expect(MediaFormat.video2160.maxHeight, 2160);
+    });
+
+    test('video above 720p only exists as streams to merge', () {
+      expect(MediaFormat.video2160.needsFfmpeg, isTrue);
+      expect(MediaFormat.video1080.needsFfmpeg, isTrue);
+      expect(MediaFormat.video720.needsFfmpeg, isFalse);
+      expect(MediaFormat.video480.needsFfmpeg, isFalse);
+      expect(MediaFormat.videoBest.needsFfmpeg, isFalse);
+      expect(MediaFormat.audioMp3.needsFfmpeg, isTrue);
+      expect(MediaFormat.audioM4a.needsFfmpeg, isFalse);
+    });
+
     test('without ffmpeg only pre-muxed streams are requested', () {
       final args = MediaEngine.buildArgs(
         _media(MediaFormat.videoBest),
