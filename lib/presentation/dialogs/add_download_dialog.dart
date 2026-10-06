@@ -615,6 +615,8 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
 
   List<Widget> _mediaFields(ZonPalette palette) {
     if (!_hasYtDlp) return [_installCard(palette), const SizedBox(height: 16)];
+    final progress = state.installProgress;
+    final stage = state.installStage;
     return [
       _previewCard(palette),
       const SizedBox(height: 16),
@@ -624,8 +626,11 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
       if (!_hasFfmpeg) ...[
         const SizedBox(height: 10),
         Text(
-          'ffmpeg not found: MP3, 1080p and 4K need it. Best video then '
-          'falls back to single-file streams (often 720p or lower).',
+          progress != null && stage != null
+              ? '$stage… ${(progress * 100).round()}% — MP3, 1080p and 4K '
+                    'unlock as soon as it finishes.'
+              : 'ffmpeg not found: MP3, 1080p and 4K need it. Best video then '
+                    'falls back to single-file streams (often 720p or lower).',
           style: AppType.body(palette.textMuted, size: 11.5),
         ),
       ],
@@ -657,7 +662,8 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
                 const SizedBox(height: 3),
                 Text(
                   progress != null
-                      ? 'Downloading… ${(progress * 100).round()}%'
+                      ? '${state.installStage ?? 'Downloading'}… '
+                            '${(progress * 100).round()}%'
                       : 'Free, open source, about 35 MB. ZON keeps it updated.',
                   style: AppType.body(palette.textMuted, size: 11.5),
                 ),
@@ -808,7 +814,11 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
   }
 
   String? _disabledReason(MediaFormat format) {
-    if (format.needsFfmpeg && !_hasFfmpeg) return 'Install ffmpeg to enable';
+    if (format.needsFfmpeg && !_hasFfmpeg) {
+      return state.installProgress != null
+          ? 'Setting up ffmpeg…'
+          : 'Install ffmpeg to enable';
+    }
     final height = _info?.maxHeight;
     if (!format.fitsVideo(height)) {
       return 'This video tops out at ${height}p';
@@ -892,7 +902,8 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
                     const SizedBox(height: 3),
                     SelectableText(
                       progress != null
-                          ? 'Downloading… ${(progress * 100).round()}%'
+                          ? '${state.installStage ?? 'Downloading aria2'}… '
+                                '${(progress * 100).round()}%'
                           : canInstall
                           ? 'Free and open source, about 5 MB.'
                           : 'Install it with: ${MediaTools.aria2InstallCommand}',

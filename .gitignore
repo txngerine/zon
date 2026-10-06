@@ -46,3 +46,7 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# Third-party tool archives fetched by tool/bundle_tools.dart
+/assets/tools/*.gz
+/assets/tools/*.LICENSE

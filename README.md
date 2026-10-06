@@ -1,5 +1,7 @@
 # ZON — The Download Manager
 
+[![CI](https://github.com/txngerine/zon/actions/workflows/ci.yml/badge.svg)](https://github.com/txngerine/zon/actions/workflows/ci.yml)
+
 A cross-platform (macOS, Windows, Linux) download manager built with Flutter.
 
 ## Features
@@ -27,14 +29,16 @@ A cross-platform (macOS, Windows, Linux) download manager built with Flutter.
 
 ## Requirements
 
-| Tool | Needed for | Install |
+| Tool | Needed for | How ZON gets it |
 | --- | --- | --- |
 | yt-dlp | any video/audio site | **Settings › Media › Install** (one click), or `brew install yt-dlp` |
-| ffmpeg | MP3, and video above 720p (merging streams) | `brew install ffmpeg` · `winget install ffmpeg` · `sudo apt install ffmpeg` |
-| aria2 | torrents and magnet links | **Settings › Torrents › Install** on Windows, or `brew install aria2` · `sudo apt install aria2` |
+| ffmpeg + ffprobe | MP3, and video above 720p (merging streams) | **Bundled** — unpacked into the app-support `bin/` folder on first launch |
+| aria2 | torrents and magnet links | **Bundled** on Windows and Linux; `brew install aria2` on macOS, or **Settings › Torrents › Install** |
 
-ZON finds these on `PATH` and in the usual Homebrew/WinGet/Scoop locations.
-Without ffmpeg, video falls back to pre-merged streams and MP3 is disabled.
+Bundled tools are unpacked locally on first launch, so no download or package
+manager is involved. ZON still prefers anything already on `PATH` and in the
+usual Homebrew/WinGet/Scoop locations. Without ffmpeg, video falls back to
+pre-merged streams and MP3 is disabled.
 
 Linux builds need `libgtk-3-dev libx11-dev libxi-dev` (tray icon).
 
@@ -54,9 +58,19 @@ These need a logged-in session. Choose your browser under
 
 ```sh
 flutter pub get
+dart run tool/bundle_tools.dart   # fetch + checksum the bundled tool archives
 flutter test          # unit, engine (real local HTTP server) and widget tests
 flutter run -d macos
 ```
+
+`.github/workflows/ci.yml` runs the formatter, analyzer and tests on Linux,
+macOS and Windows, then packages a release build per platform (pushes to
+`main`, tags and manual runs).
+
+`tool/bundle_tools.dart` downloads pinned, sha256-verified archives for the
+target platform (`--platform macos|linux|windows`, `--arch`, `--force`) into
+`assets/tools/`, which is gitignored. A checkout without them builds fine:
+ffmpeg/aria2 then come from `PATH` or the package manager instead.
 
 ```
 lib/
@@ -69,6 +83,19 @@ lib/
 
 The macOS App Sandbox is disabled because ZON runs yt-dlp/ffmpeg and writes
 wherever you choose. Distribute it outside the Mac App Store.
+
+## Third-party tools
+
+ZON runs these as separate programs rather than linking them:
+
+- **yt-dlp** — Unlicense, downloaded on demand.
+- **ffmpeg / ffprobe** — GPLv3 static builds from
+  [eugeneware/ffmpeg-static](https://github.com/eugeneware/ffmpeg-static)
+  (release `b6.1.1`); the license text ships as `assets/tools/ffmpeg.LICENSE`
+  and is copied next to the binaries on first launch.
+- **aria2 1.37.0** — GPLv2+; Windows build from
+  [aria2/aria2](https://github.com/aria2/aria2), Linux static build from
+  [abcfy2/aria2-static-build](https://github.com/abcfy2/aria2-static-build).
 
 ## Legal
 

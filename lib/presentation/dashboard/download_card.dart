@@ -409,12 +409,24 @@ class _StatsRow extends StatelessWidget {
               percent,
               const SizedBox(width: 12),
               transferred,
-              const Spacer(),
-              speedText,
-              const SizedBox(width: 18),
-              etaText,
-              const SizedBox(width: 18),
-              connections,
+              Expanded(
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        speedText,
+                        const SizedBox(width: 18),
+                        etaText,
+                        const SizedBox(width: 18),
+                        connections,
+                      ],
+                    ),
+                  ),
+                ),
+              ),
             ],
           );
         }

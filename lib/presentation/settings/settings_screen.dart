@@ -208,7 +208,8 @@ class SettingsScreen extends StatelessWidget {
                   'aria2',
                   state.installProgress != null &&
                           !(state.mediaTools?.hasAria2 ?? false)
-                      ? 'Downloading… ${(state.installProgress! * 100).round()}%'
+                      ? '${state.installStage ?? 'Downloading aria2'}… '
+                            '${(state.installProgress! * 100).round()}%'
                       : state.mediaTools?.hasAria2 ?? false
                       ? 'Found • ${state.mediaTools!.aria2Path}'
                       : 'Not found — needed for torrents and magnet links. '
@@ -832,7 +833,8 @@ class _MediaSection extends StatelessWidget {
 
     final String ytDlpStatus;
     if (install != null) {
-      ytDlpStatus = 'Downloading yt-dlp… ${(install * 100).round()}%';
+      final stage = state.installStage ?? 'Downloading yt-dlp';
+      ytDlpStatus = '$stage… ${(install * 100).round()}%';
     } else if (tools == null || !tools.resolved) {
       ytDlpStatus = 'Checking…';
     } else if (hasYtDlp) {
@@ -847,6 +849,18 @@ class _MediaSection extends StatelessWidget {
         : Platform.isWindows
         ? 'winget install ffmpeg'
         : 'sudo apt install ffmpeg';
+
+    final String ffmpegStatus;
+    if (hasFfmpeg) {
+      ffmpegStatus = 'Found • ${tools!.ffmpegPath}';
+    } else if (install != null) {
+      final stage = state.installStage ?? 'Setting up bundled tools';
+      ffmpegStatus = '$stage… ${(install * 100).round()}%';
+    } else {
+      ffmpegStatus =
+          'Not found — required for MP3 and HD video. '
+          'Install with: $installCommand';
+    }
 
     return section(context, 'MEDIA', [
       row(
@@ -883,10 +897,7 @@ class _MediaSection extends StatelessWidget {
       row(
         context,
         'ffmpeg',
-        hasFfmpeg
-            ? 'Found • ${tools!.ffmpegPath}'
-            : 'Not found — required for MP3 and HD video. '
-                  'Install with: $installCommand',
+        ffmpegStatus,
         Icon(
           hasFfmpeg ? Icons.check_circle_outline_rounded : Icons.info_outline,
           size: 18,

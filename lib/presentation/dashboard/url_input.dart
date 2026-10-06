@@ -191,12 +191,16 @@ class _QuickChipState extends State<_QuickChip> {
             children: [
               Icon(widget.icon, size: 15, color: foreground),
               const SizedBox(width: 8),
-              Text(
-                widget.label,
-                style: AppType.body(
-                  foreground,
-                  size: 12,
-                  weight: FontWeight.w500,
+              Flexible(
+                child: Text(
+                  widget.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppType.body(
+                    foreground,
+                    size: 12,
+                    weight: FontWeight.w500,
+                  ),
                 ),
               ),
             ],

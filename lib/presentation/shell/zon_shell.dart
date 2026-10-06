@@ -399,7 +399,7 @@ class _ZonShellState extends State<ZonShell> with WidgetsBindingObserver {
   }
 
   Widget _desktopLayout(ZonLayout layout, ZonPalette palette) {
-    return Column(
+    final content = Column(
       children: [
         Expanded(
           child: Row(
@@ -417,7 +417,13 @@ class _ZonShellState extends State<ZonShell> with WidgetsBindingObserver {
           ),
         ),
         StatusBar(state: state),
-        if (layout == ZonLayout.compact) _detailsDrawer(palette),
+      ],
+    );
+    if (layout != ZonLayout.compact) return content;
+    return Stack(
+      children: [
+        content,
+        Positioned.fill(child: _detailsDrawer(palette)),
       ],
     );
   }
@@ -444,14 +450,16 @@ class _ZonShellState extends State<ZonShell> with WidgetsBindingObserver {
 
     return Stack(
       children: [
-        IgnorePointer(
-          ignoring: !_detailsDrawerOpen,
-          child: AnimatedOpacity(
-            duration: const Duration(milliseconds: 220),
-            opacity: _detailsDrawerOpen ? 1 : 0,
-            child: GestureDetector(
-              onTap: _closeDrawer,
-              child: Container(color: palette.scrim),
+        Positioned.fill(
+          child: IgnorePointer(
+            ignoring: !_detailsDrawerOpen,
+            child: AnimatedOpacity(
+              duration: const Duration(milliseconds: 220),
+              opacity: _detailsDrawerOpen ? 1 : 0,
+              child: GestureDetector(
+                onTap: _closeDrawer,
+                child: Container(color: palette.scrim),
+              ),
             ),
           ),
         ),

@@ -2,6 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+
 /// Metadata yt-dlp reports for a link before downloading.
 class MediaInfo {
   const MediaInfo({
@@ -331,6 +334,90 @@ class MediaTools {
     if (!hasAria2) {
       throw const MediaToolException('aria2 was downloaded but will not run');
     }
+  }
+
+  static const String bundledAssetPrefix = 'assets/tools';
+
+  static List<String> get bundledArchives => [
+    'ffmpeg.gz',
+    'ffprobe.gz',
+    if (!Platform.isMacOS) 'aria2c.gz',
+  ];
+
+  File _targetFor(String archive) => File(
+    '$binDir${Platform.pathSeparator}'
+    '${archive.substring(0, archive.length - 3)}$_exe',
+  );
+
+  Future<ByteData> _loadBundled(String asset) => rootBundle.load(asset);
+
+  Future<void> _copyBundledLicense(
+    Future<ByteData> Function(String) load,
+  ) async {
+    final target = File('$binDir${Platform.pathSeparator}ffmpeg.LICENSE');
+    if (target.existsSync()) return;
+    try {
+      final data = await load('$bundledAssetPrefix/ffmpeg.LICENSE');
+      await target.writeAsBytes(
+        data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
+        flush: true,
+      );
+    } on FlutterError {
+      return;
+    } on IOException {
+      return;
+    }
+  }
+
+  Future<int> installBundled({
+    void Function(double progress)? onProgress,
+    Future<ByteData> Function(String asset)? loader,
+  }) async {
+    final load = loader ?? _loadBundled;
+    final pending = <String, List<int>>{};
+    for (final archive in bundledArchives) {
+      if (_targetFor(archive).existsSync()) continue;
+      try {
+        final data = await load('$bundledAssetPrefix/$archive');
+        pending[archive] = data.buffer.asUint8List(
+          data.offsetInBytes,
+          data.lengthInBytes,
+        );
+      } on FlutterError {
+        continue;
+      } on IOException {
+        continue;
+      }
+    }
+    await Directory(binDir).create(recursive: true);
+    await _copyBundledLicense(load);
+    if (pending.isEmpty) return 0;
+
+    final total = pending.values.fold<int>(
+      0,
+      (sum, bytes) => sum + bytes.length,
+    );
+    var received = 0;
+    await Directory(binDir).create(recursive: true);
+    for (final entry in pending.entries) {
+      final List<int> binary;
+      try {
+        binary = gzip.decode(entry.value);
+      } on Object catch (error) {
+        throw MediaToolException('Bundled ${entry.key} is unreadable: $error');
+      }
+      final target = _targetFor(entry.key);
+      final temp = File('${target.path}.download');
+      await temp.writeAsBytes(binary, flush: true);
+      if (target.existsSync()) await target.delete();
+      await temp.rename(target.path);
+      if (!Platform.isWindows) {
+        await Process.run('chmod', ['755', target.path]);
+      }
+      received += entry.value.length;
+      onProgress?.call(received / total);
+    }
+    return pending.length;
   }
 
   /// Updates a ZON-managed yt-dlp in place. Returns the new version.

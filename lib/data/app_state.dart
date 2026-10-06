@@ -154,7 +154,7 @@ class AppState extends ChangeNotifier implements TransferListener {
     // Media downloads wait until we know whether yt-dlp exists.
     state._toolsPending = true;
     unawaited(
-      state.refreshMediaTools().whenComplete(() {
+      state._prepareTools().whenComplete(() {
         state._toolsPending = false;
         if (!settings.autoStart) state._queuePaused = true;
       }),
@@ -250,6 +250,7 @@ class AppState extends ChangeNotifier implements TransferListener {
 
   bool _toolsBusy = false;
   double? _installProgress;
+  String? _installStage;
   String? _lastClipboard;
 
   static const int sampleWindow = 90;
@@ -281,6 +282,9 @@ class AppState extends ChangeNotifier implements TransferListener {
 
   /// Progress of an in-flight yt-dlp install (0..1), or null.
   double? get installProgress => _installProgress;
+
+  /// What [installProgress] belongs to, e.g. a download or a bundle unpack.
+  String? get installStage => _installStage;
 
   DownloadItem? get selected {
     final id = _selectedId;
@@ -884,6 +888,37 @@ class AppState extends ChangeNotifier implements TransferListener {
   // Media tools (yt-dlp / ffmpeg)
   // --------------------------------------------------------------------------
 
+  Future<void> _prepareTools() async {
+    await _setupBundledTools();
+    await refreshMediaTools();
+  }
+
+  Future<void> _setupBundledTools() async {
+    final tools = _tools;
+    if (tools == null || _toolsBusy) return;
+    if (tools.hasFfmpeg && (Platform.isMacOS || tools.hasAria2)) return;
+    _toolsBusy = true;
+    _installProgress = 0;
+    _installStage = 'Setting up bundled tools';
+    if (!_disposed) notifyListeners();
+    try {
+      final unpacked = await tools.installBundled(
+        onProgress: (value) {
+          _installProgress = value;
+          if (!_disposed) notifyListeners();
+        },
+      );
+      if (unpacked > 0) showToast('Bundled tools are ready');
+    } catch (error) {
+      showToast('Could not unpack bundled tools: $error');
+    } finally {
+      _toolsBusy = false;
+      _installProgress = null;
+      _installStage = null;
+      if (!_disposed) notifyListeners();
+    }
+  }
+
   Future<void> refreshMediaTools() async {
     final tools = _tools;
     if (tools == null) return;
@@ -902,6 +937,7 @@ class AppState extends ChangeNotifier implements TransferListener {
     if (tools == null || _toolsBusy) return false;
     _toolsBusy = true;
     _installProgress = 0;
+    _installStage = 'Downloading yt-dlp';
     notifyListeners();
     try {
       await tools.install(
@@ -918,6 +954,7 @@ class AppState extends ChangeNotifier implements TransferListener {
     } finally {
       _toolsBusy = false;
       _installProgress = null;
+      _installStage = null;
       if (!_disposed) notifyListeners();
     }
   }
@@ -943,6 +980,7 @@ class AppState extends ChangeNotifier implements TransferListener {
     if (tools == null || _toolsBusy) return false;
     _toolsBusy = true;
     _installProgress = 0;
+    _installStage = 'Downloading aria2';
     notifyListeners();
     try {
       await tools.installAria2(
@@ -959,6 +997,7 @@ class AppState extends ChangeNotifier implements TransferListener {
     } finally {
       _toolsBusy = false;
       _installProgress = null;
+      _installStage = null;
       if (!_disposed) notifyListeners();
     }
   }

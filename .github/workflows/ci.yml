@@ -1,0 +1,159 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze & format
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.5'
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      - name: Lockfile is up to date
+        run: git diff --exit-code -- pubspec.lock
+
+      - name: Format
+        run: dart format --output=none --set-exit-if-changed lib test tool
+
+      - name: Analyze
+        run: flutter analyze
+
+  test:
+    name: Test (${{ matrix.name }})
+    needs: analyze
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux
+            os: ubuntu-latest
+          - name: macos
+            os: macos-latest
+          - name: windows
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.5'
+          channel: stable
+          cache: true
+
+      - name: Cache bundled tools
+        uses: actions/cache@v4
+        with:
+          path: assets/tools
+          key: tools-${{ runner.os }}-${{ hashFiles('tool/bundle_tools.dart') }}
+
+      - run: flutter pub get
+
+      - name: Fetch bundled tools
+        run: dart run tool/bundle_tools.dart
+
+      - name: Test
+        run: flutter test
+
+  build:
+    name: Build (${{ matrix.name }})
+    needs: test
+    if: github.event_name != 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos-arm64
+            os: macos-latest
+            artifact: zon-macos-arm64
+            target: flutter build macos --release
+            output: build/macos/Build/Products/Release/zon.app
+          - name: linux-x64
+            os: ubuntu-latest
+            artifact: zon-linux-x64
+            target: flutter build linux --release
+            output: build/linux/x64/release/bundle
+          - name: windows-x64
+            os: windows-latest
+            artifact: zon-windows-x64
+            target: flutter build windows --release
+            output: build/windows/x64/runner/Release
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.5'
+          channel: stable
+          cache: true
+
+      - name: Cache bundled tools
+        uses: actions/cache@v4
+        with:
+          path: assets/tools
+          key: tools-${{ runner.os }}-${{ hashFiles('tool/bundle_tools.dart') }}
+
+      - name: Linux desktop dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config \
+            libgtk-3-dev libx11-dev libxi-dev liblzma-dev
+
+      - run: flutter pub get
+
+      - name: Fetch bundled tools
+        run: dart run tool/bundle_tools.dart
+
+      - name: Build
+        run: ${{ matrix.target }}
+
+      - name: Ship the ffmpeg license with the build
+        shell: bash
+        run: cp assets/tools/ffmpeg.LICENSE "${{ matrix.output }}/"
+
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: ditto -c -k --keepParent "${{ matrix.output }}" "${{ matrix.artifact }}.zip"
+
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: tar -czf "${{ matrix.artifact }}.tar.gz" -C "$(dirname "${{ matrix.output }}")" "$(basename "${{ matrix.output }}")"
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path "${{ matrix.output }}" -DestinationPath "${{ matrix.artifact }}.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}.*
+          if-no-files-found: error
+          retention-days: 14
