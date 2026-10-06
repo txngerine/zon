@@ -37,6 +37,12 @@ enum MediaFormat {
   /// any video above 720p, which only exists as separate streams to merge.
   bool get needsFfmpeg => this == audioMp3 || (maxHeight ?? 0) > 720;
 
+  bool fitsVideo(int? videoHeight) {
+    final cap = maxHeight;
+    if (cap == null || videoHeight == null) return true;
+    return cap <= videoHeight;
+  }
+
   static MediaFormat fromName(String? name) => MediaFormat.values.firstWhere(
     (value) => value.name == name,
     orElse: () => MediaFormat.videoBest,

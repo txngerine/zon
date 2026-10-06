@@ -179,6 +179,17 @@ void main() {
       expect(MediaFormat.audioM4a.needsFfmpeg, isFalse);
     });
 
+    test('a quality fits only when the link can supply it', () {
+      expect(MediaFormat.video2160.fitsVideo(2160), isTrue);
+      expect(MediaFormat.video2160.fitsVideo(1080), isFalse);
+      expect(MediaFormat.video1080.fitsVideo(1440), isTrue);
+      expect(MediaFormat.video1080.fitsVideo(720), isFalse);
+      expect(MediaFormat.video1080.fitsVideo(null), isTrue);
+      expect(MediaFormat.videoBest.fitsVideo(360), isTrue);
+      expect(MediaFormat.audioMp3.fitsVideo(360), isTrue);
+      expect(MediaFormat.audioM4a.fitsVideo(null), isTrue);
+    });
+
     test('without ffmpeg only pre-muxed streams are requested', () {
       final args = MediaEngine.buildArgs(
         _media(MediaFormat.videoBest),
@@ -243,6 +254,28 @@ void main() {
     expect(video.thumbnail, 'big.jpg');
     expect(video.maxHeight, 1080);
     expect(video.duration, const Duration(milliseconds: 19500));
+  });
+
+  test('size estimate falls back to the highest stream', () {
+    final info = MediaInfo.fromJson({
+      'title': 'Clip',
+      'formats': [
+        {'height': 720, 'filesize_approx': 12000000},
+        {'height': 2160, 'filesize_approx': 980000000},
+        {'height': null},
+      ],
+    });
+    expect(info.maxHeight, 2160);
+    expect(info.sizeEstimate, 980000000);
+
+    final top = MediaInfo.fromJson({
+      'title': 'Clip',
+      'filesize_approx': 42000000,
+      'formats': [
+        {'height': 2160, 'filesize_approx': 980000000},
+      ],
+    });
+    expect(top.sizeEstimate, 42000000);
   });
 
   test('friendlyError points login walls at the cookie setting', () {

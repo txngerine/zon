@@ -234,6 +234,7 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
       setState(() {
         _info = info;
         _probing = false;
+        _reconcileFormat();
       });
     } catch (error) {
       if (!mounted || token != _probeToken) return;
@@ -508,7 +509,7 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
                   if (mediaInList) ...[
                     _label('FORMAT FOR VIDEO LINKS'),
                     const SizedBox(height: 10),
-                    _formatChips(palette),
+                    _formatChips(),
                     const SizedBox(height: 16),
                   ],
                 ],
@@ -619,7 +620,7 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
       const SizedBox(height: 16),
       _label('FORMAT'),
       const SizedBox(height: 10),
-      _formatChips(palette),
+      _formatChips(),
       if (!_hasFfmpeg) ...[
         const SizedBox(height: 10),
         Text(
@@ -731,6 +732,7 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
       if (info.duration case final duration?)
         formatDuration(duration.inSeconds),
       if (info.maxHeight case final height?) 'up to ${height}p',
+      if (info.sizeEstimate case final size?) '≈ ${formatBytes(size)}',
       info.site,
     ];
 
@@ -781,7 +783,7 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
                     const SizedBox(height: 5),
                     Text(
                       details.join('  •  '),
-                      maxLines: 2,
+                      maxLines: 3,
                       overflow: TextOverflow.ellipsis,
                       style: AppType.body(palette.textMuted, size: 11.5),
                     ),
@@ -805,18 +807,59 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
     );
   }
 
-  Widget _formatChips(ZonPalette palette) {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
+  String? _disabledReason(MediaFormat format) {
+    if (format.needsFfmpeg && !_hasFfmpeg) return 'Install ffmpeg to enable';
+    final height = _info?.maxHeight;
+    if (!format.fitsVideo(height)) {
+      return 'This video tops out at ${height}p';
+    }
+    return null;
+  }
+
+  void _reconcileFormat() {
+    final height = _info?.maxHeight;
+    if (_format.isAudio || _format.fitsVideo(height)) return;
+    final exact = MediaFormat.values.firstWhere(
+      (format) => !format.isAudio && format.maxHeight == height,
+      orElse: () => MediaFormat.videoBest,
+    );
+    _format = _disabledReason(exact) == null ? exact : MediaFormat.videoBest;
+  }
+
+  Widget _formatChips() {
+    Widget group(String title, List<MediaFormat> formats) => Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        for (final format in MediaFormat.values)
-          _FormatChip(
-            format: format,
-            selected: _format == format,
-            enabled: !format.needsFfmpeg || _hasFfmpeg,
-            onTap: () => setState(() => _format = format),
-          ),
+        _label(title),
+        const SizedBox(height: 9),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final format in formats)
+              _FormatChip(
+                format: format,
+                selected: _format == format,
+                disabledReason: _disabledReason(format),
+                onTap: () => setState(() => _format = format),
+              ),
+          ],
+        ),
+      ],
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        group('VIDEO', [
+          for (final format in MediaFormat.values)
+            if (!format.isAudio) format,
+        ]),
+        const SizedBox(height: 15),
+        group('AUDIO', [
+          for (final format in MediaFormat.values)
+            if (format.isAudio) format,
+        ]),
       ],
     );
   }
@@ -1203,17 +1246,19 @@ class _FormatChip extends StatelessWidget {
   const _FormatChip({
     required this.format,
     required this.selected,
-    required this.enabled,
+    required this.disabledReason,
     required this.onTap,
   });
 
   final MediaFormat format;
   final bool selected;
-  final bool enabled;
+
+  final String? disabledReason;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
+    final enabled = disabledReason == null;
     final palette = context.palette;
     final foreground = !enabled
         ? palette.textMuted.withValues(alpha: 0.5)
@@ -1267,6 +1312,6 @@ class _FormatChip extends StatelessWidget {
       ),
     );
     if (enabled) return chip;
-    return Tooltip(message: 'Install ffmpeg to enable', child: chip);
+    return Tooltip(message: disabledReason, child: chip);
   }
 }

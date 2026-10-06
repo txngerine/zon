@@ -40,13 +40,16 @@ class MediaInfo {
     ].where((entry) => entry.url.isNotEmpty).toList();
 
     int? maxHeight;
+    int? topStreamSize;
     final formats = json['formats'];
     if (formats is List) {
       for (final format in formats) {
         if (format is! Map) continue;
         final height = (format['height'] as num?)?.toInt();
-        if (height != null && (maxHeight == null || height > maxHeight)) {
+        if (height == null) continue;
+        if (maxHeight == null || height > maxHeight) {
           maxHeight = height;
+          topStreamSize = _sizeOf(format);
         }
       }
     }
@@ -62,13 +65,17 @@ class MediaInfo {
       duration: seconds == null
           ? null
           : Duration(milliseconds: (seconds * 1000).round()),
-      sizeEstimate: ((json['filesize'] ?? json['filesize_approx']) as num?)
-          ?.toInt(),
+      sizeEstimate:
+          ((json['filesize'] ?? json['filesize_approx']) as num?)?.toInt() ??
+          topStreamSize,
       maxHeight: maxHeight,
       entries: entries,
       isPlaylist: isPlaylist,
     );
   }
+
+  static int? _sizeOf(Map<Object?, Object?> format) =>
+      ((format['filesize'] ?? format['filesize_approx']) as num?)?.toInt();
 
   static String? _thumbnail(Map<String, Object?> json) {
     final direct = json['thumbnail'];
