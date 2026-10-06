@@ -526,7 +526,7 @@ class AppState extends ChangeNotifier implements TransferListener {
         _slotsUsed < _settings.maxSimultaneous;
 
     final item = DownloadItem(
-      id: 'z-${now.microsecondsSinceEpoch.toRadixString(36)}',
+      id: _uniqueId(now),
       fileName: name,
       url: link,
       source: isTorrent ? 'BitTorrent' : (site?.name ?? host),
@@ -562,6 +562,16 @@ class AppState extends ChangeNotifier implements TransferListener {
       );
     }
     return _find(item.id) ?? item;
+  }
+
+  String _uniqueId(DateTime now) {
+    final base = now.microsecondsSinceEpoch.toRadixString(36);
+    var id = 'z-$base';
+    var attempt = 0;
+    while (_downloads.any((item) => item.id == id)) {
+      id = 'z$base-${(++attempt).toRadixString(36)}';
+    }
+    return id;
   }
 
   /// Adds a local `.torrent` file. A copy is kept in the app folder so the

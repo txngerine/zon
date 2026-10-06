@@ -143,7 +143,12 @@ void main() {
     final first = _Recorder();
     engine.listener = first;
     engine.start(item, options);
-    await Future<void>.delayed(const Duration(milliseconds: 600));
+    final waitUntil = DateTime.now().add(const Duration(seconds: 15));
+    while (first.lastBytes == 0 &&
+        !first.completed.isCompleted &&
+        DateTime.now().isBefore(waitUntil)) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
     await engine.pause(item.id);
     expect(first.lastBytes, greaterThan(0));
     expect(first.completed.isCompleted, isFalse);
