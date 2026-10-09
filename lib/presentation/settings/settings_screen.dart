@@ -279,17 +279,17 @@ class SettingsScreen extends StatelessWidget {
                 _switchRow(
                   context,
                   'Browser button',
-                  'Accept links from the ZON bookmarklet on 127.0.0.1',
+                  'Accept links from the ZON extension and bookmarklet on 127.0.0.1',
                   _settings.localApi,
                   (value) => _update(_settings.copyWith(localApi: value)),
                 ),
                 _row(
                   context,
-                  'Bookmarklet',
-                  'One click sends the page you are on — YouTube, Reels, files',
+                  'Browser extension',
+                  'Right-click any link or video to download it with ZON',
                   MonoButton(
                     label: 'Set up',
-                    icon: Icons.bookmark_add_outlined,
+                    icon: Icons.extension_outlined,
                     onTap: () => BrowserIntegrationDialog.show(context, state),
                   ),
                 ),

@@ -1,0 +1,38 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Send to ZON</title>
+<style>
+  :root { color-scheme: light dark; --muted: #71717a; --ok: #16a34a; --bad: #dc2626; }
+  body { font: 13px -apple-system, "Segoe UI", system-ui, sans-serif; margin: 0; padding: 16px; min-width: 360px; }
+  h1 { font-size: 15px; margin: 0 0 4px; }
+  p { color: var(--muted); margin: 0 0 14px; line-height: 1.45; }
+  label { display: block; font-weight: 600; margin-bottom: 6px; }
+  .row { display: flex; gap: 8px; }
+  input[type=text] { flex: 1; font: 12px ui-monospace, Menlo, monospace; padding: 7px 9px; border-radius: 7px; border: 1px solid #a1a1aa66; background: transparent; color: inherit; }
+  button { font: inherit; padding: 7px 12px; border-radius: 7px; border: 1px solid #a1a1aa66; background: #18181b; color: #fafafa; cursor: pointer; }
+  .check { display: flex; gap: 8px; align-items: flex-start; margin-top: 18px; font-weight: 400; }
+  .check small { display: block; color: var(--muted); margin-top: 2px; }
+  #status { margin-top: 10px; min-height: 1.2em; }
+  #status.ok { color: var(--ok); } #status.bad { color: var(--bad); }
+</style>
+</head>
+<body>
+  <h1>Send to ZON</h1>
+  <p>In ZON open <b>Browser extension</b> (sidebar), click <b>Copy key</b> and paste it here.</p>
+  <label for="key">Pairing key</label>
+  <div class="row">
+    <input id="key" type="text" spellcheck="false" autocomplete="off" placeholder="32-character key">
+    <button id="save">Save &amp; test</button>
+  </div>
+  <div id="status"></div>
+  <label class="check">
+    <input id="intercept" type="checkbox">
+    <span>Send browser downloads to ZON
+      <small>When ZON accepts a download, the browser's copy is cancelled. Downloads behind a login may fail in ZON.</small>
+    </span>
+  </label>
+  <script src="options.js"></script>
+</body>
+</html>

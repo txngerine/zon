@@ -63,6 +63,7 @@ flutter:
     - assets/brand/zon_icon.png
     - assets/tray/
     - assets/tools/
+    - assets/browser_extension/
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in

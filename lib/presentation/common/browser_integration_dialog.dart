@@ -9,7 +9,8 @@ import '../../domain/models/media_format.dart';
 import '../../platform/local_api.dart';
 import 'dialogs.dart';
 
-/// Explains and hands out the "Send to ZON" bookmarklets.
+/// Sets up the "Send to ZON" browser extension, with bookmarklets as a
+/// fallback.
 class BrowserIntegrationDialog extends StatelessWidget {
   const BrowserIntegrationDialog({super.key, required this.state});
 
@@ -31,6 +32,13 @@ class BrowserIntegrationDialog extends StatelessWidget {
     // Don't offer our own bookmarklet back as a "copied link".
     state.markClipboardSeen(code);
     state.showToast('$label bookmarklet copied');
+  }
+
+  void _copyKey() {
+    final key = state.settings.apiToken;
+    Clipboard.setData(ClipboardData(text: key));
+    state.markClipboardSeen(key);
+    state.showToast('Pairing key copied');
   }
 
   @override
@@ -87,7 +95,7 @@ class BrowserIntegrationDialog extends StatelessWidget {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      'Send links from your browser',
+                      'Browser extension',
                       style: AppType.heading(palette.textPrimary, size: 17),
                     ),
                   ),
@@ -103,16 +111,22 @@ class BrowserIntegrationDialog extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 14),
-              step('1', 'Copy a bookmarklet below.'),
+              step(
+                '1',
+                'Show the extension folder. Chrome, Edge or Brave: open '
+                    'chrome://extensions, turn on Developer mode, click Load '
+                    'unpacked and pick that folder. Firefox: about:debugging › '
+                    'This Firefox › Load Temporary Add-on › manifest.json.',
+              ),
               step(
                 '2',
-                'Create a new bookmark in your bookmarks bar and paste it as '
-                    'the URL.',
+                'Copy the pairing key and paste it into the extension\'s '
+                    'settings, which open on install.',
               ),
               step(
                 '3',
-                'On any YouTube video, Reel or download page, click the '
-                    'bookmark — ZON picks it up instantly.',
+                'Click the ZON toolbar button to send the page, or right-click '
+                    'any link or video › Download with ZON.',
               ),
               if (!enabled)
                 Padding(
@@ -132,9 +146,32 @@ class BrowserIntegrationDialog extends StatelessWidget {
                 runSpacing: 10,
                 children: [
                   MonoButton(
+                    label: 'Show extension folder',
+                    icon: Icons.folder_open_rounded,
+                    variant: MonoButtonVariant.primary,
+                    onTap: state.revealBrowserExtension,
+                  ),
+                  MonoButton(
+                    label: 'Copy key',
+                    icon: Icons.key_rounded,
+                    onTap: _copyKey,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'No extension? Copy a bookmarklet and paste it as the URL of a '
+                'new bookmark.',
+                style: AppType.body(palette.textSecondary, size: 12),
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  MonoButton(
                     label: 'Send to ZON',
                     icon: Icons.bookmark_add_outlined,
-                    variant: MonoButtonVariant.primary,
                     onTap: () => _copy(context, 'Send to ZON', null),
                   ),
                   MonoButton(
@@ -148,8 +185,8 @@ class BrowserIntegrationDialog extends StatelessWidget {
               const SizedBox(height: 14),
               Text(
                 'Links go to 127.0.0.1:${LocalApiServer.defaultPort} only — '
-                'nothing leaves this computer. The bookmarklet holds a private '
-                'key, so other websites cannot add downloads.',
+                'nothing leaves this computer. The key is private to this '
+                'install, so other websites cannot add downloads.',
                 style: AppType.body(palette.textMuted, size: 11),
               ),
             ],

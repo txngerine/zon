@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:path_provider/path_provider.dart';
 
 import '../core/utils/formatters.dart';
@@ -1055,7 +1056,41 @@ class AppState extends ChangeNotifier implements TransferListener {
   /// Marks [text] as seen so the clipboard watcher ignores it.
   void markClipboardSeen(String? text) => _lastClipboard = text?.trim();
 
-  /// Entry point for links sent by the browser bookmarklet.
+  /// Files of the "Send to ZON" extension under `assets/browser_extension/`.
+  static const browserExtensionFiles = [
+    'manifest.json',
+    'background.js',
+    'options.html',
+    'options.js',
+    'icon16.png',
+    'icon32.png',
+    'icon48.png',
+    'icon128.png',
+  ];
+
+  /// Writes the bundled browser extension to the app-support folder (fresh
+  /// each time, so an app update also updates it) and shows it in the file
+  /// manager for "Load unpacked". Returns the folder, or null on failure.
+  Future<String?> revealBrowserExtension() async {
+    if (dataDir.isEmpty) return null;
+    final sep = Platform.pathSeparator;
+    final dir = Directory('$dataDir${sep}browser_extension');
+    try {
+      await dir.create(recursive: true);
+      for (final name in browserExtensionFiles) {
+        final data = await rootBundle.load('assets/browser_extension/$name');
+        await File('${dir.path}$sep$name')
+            .writeAsBytes(data.buffer.asUint8List(), flush: true);
+      }
+    } catch (_) {
+      showToast('Could not unpack the browser extension');
+      return null;
+    }
+    await _desktop.reveal(dir.path);
+    return dir.path;
+  }
+
+  /// Entry point for links sent by the browser extension or bookmarklet.
   Future<void> addFromBrowser(String url, {MediaFormat? format}) async {
     _section = AppSection.all;
     final count = await addLink(

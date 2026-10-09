@@ -5,11 +5,13 @@ import 'dart:math';
 
 import '../domain/models/media_format.dart';
 
-/// Tiny loopback HTTP server for the browser bookmarklet and for handing
+/// Tiny loopback HTTP server for the browser extension
+/// (`assets/browser_extension`), the bookmarklet, and for handing
 /// links from a second ZON process (magnet handler) to the running one.
 ///
 /// `GET /add?t=<token>&url=<link>[&format=audioMp3]` adds a download and
 /// returns a page that closes itself. `path=<file>` adds a local `.torrent`.
+/// `GET /hello?t=<token>` only checks the token.
 ///
 /// Only 127.0.0.1 is bound, but any web page can still make the browser
 /// request a loopback URL, so every request must carry the per-install
@@ -70,7 +72,7 @@ class LocalApiServer {
         response.write('ZON');
         return;
       }
-      if (request.uri.path != '/add') {
+      if (request.uri.path != '/add' && request.uri.path != '/hello') {
         response.statusCode = HttpStatus.notFound;
         return;
       }
@@ -78,7 +80,12 @@ class LocalApiServer {
       if (expected.isEmpty ||
           !_constantTimeEquals(query['t'] ?? '', expected)) {
         response.statusCode = HttpStatus.forbidden;
-        response.write('Forbidden — copy a fresh bookmarklet from ZON.');
+        response.write('Forbidden — copy a fresh key from ZON.');
+        return;
+      }
+      if (request.uri.path == '/hello') {
+        // Lets the extension check its pairing key without adding anything.
+        response.write('ZON');
         return;
       }
 
