@@ -12,6 +12,9 @@ import 'package:zon/presentation/dashboard/download_card.dart';
 import 'package:zon/presentation/dashboard/url_input.dart';
 import 'package:zon/presentation/details/details_panel.dart';
 import 'package:zon/presentation/mobile/mobile_shell.dart';
+import 'package:zon/presentation/mobile/add_download_sheet.dart';
+import 'package:zon/presentation/mobile/mobile_details_page.dart';
+import 'package:zon/presentation/mobile/mobile_download_card.dart';
 import 'package:zon/presentation/shell/status_bar.dart';
 import 'package:zon/presentation/sidebar/sidebar.dart';
 
@@ -221,7 +224,6 @@ void main() {
       );
 
       // A narrower window reflows to fewer columns without overflowing.
-      await tester.binding.setSurfaceSize(const Size(1100, 900));
       tester.view.physicalSize = const Size(1100, 900);
       await tester.pump(const Duration(milliseconds: 400));
       expect(tester.takeException(), isNull);
@@ -309,16 +311,78 @@ void main() {
   });
 
   group('mobile shell', () {
-    testWidgets('renders single column layout with bottom navigation', (
+    testWidgets('every tab fits a small phone without overflow', (
       tester,
     ) async {
+      final state = await pumpZon(tester, size: const Size(360, 740));
+      for (final tab in ['History', 'Queue', 'Settings', 'Home']) {
+        await tester.tap(find.text(tab));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 400));
+        expect(tester.takeException(), isNull, reason: tab);
+      }
+      // History rows keep their actions reachable without hover.
+      await tester.tap(find.text('History'));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(state.history, isNotEmpty);
+      expect(find.byTooltip('Actions'), findsWidgets);
+      await tester.tap(find.byTooltip('Actions').first);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.text('Redownload'), findsOneWidget);
+      await tester.tapAt(const Offset(10, 10));
+      await tester.pump(const Duration(milliseconds: 400));
+
+      await tester.tap(find.text('Home'));
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.tap(find.byType(MobileDownloadCard).first);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(find.byType(MobileDetailsPage), findsOneWidget);
+      expect(tester.takeException(), isNull, reason: 'details');
+
+      await finish(tester);
+    });
+
+    testWidgets('home, details page, add sheet and tabs', (tester) async {
       final state = await pumpZon(tester, size: const Size(400, 860));
 
       expect(find.byType(MobileShell), findsOneWidget);
       expect(find.byType(Sidebar), findsNothing);
-      expect(find.text('Home'), findsOneWidget);
-      expect(find.byType(UrlInputBar), findsOneWidget);
-      expect(find.byType(DownloadCard), findsWidgets);
+      expect(find.byType(MobileDownloadCard), findsWidgets);
+      expect(find.text('Paste a link to start downloading…'), findsOneWidget);
+      for (final tab in ['Home', 'History', 'Queue', 'Settings']) {
+        expect(find.text(tab), findsOneWidget, reason: tab);
+      }
+
+      // A row opens full-screen details, which go back on Back.
+      final first = state.visibleDownloads.first;
+      await tester.tap(find.byType(MobileDownloadCard).first);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(find.byType(MobileDetailsPage), findsOneWidget);
+      expect(state.selected?.id, first.id);
+      expect(find.text('Open Folder'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.tap(find.byTooltip('Back'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(find.byType(MobileDetailsPage), findsNothing);
+
+      // + opens the add sheet.
+      await tester.tap(find.byTooltip('Add download'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(find.byType(AddDownloadSheet), findsOneWidget);
+      expect(find.text('Import .torrent file'), findsOneWidget);
+      await tester.tap(find.byTooltip('Close'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(find.byType(AddDownloadSheet), findsNothing);
+
+      await tester.tap(find.text('Queue'));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(state.section, AppSection.queued);
 
       await tester.tap(find.text('Settings'));
       await tester.pump(const Duration(milliseconds: 300));

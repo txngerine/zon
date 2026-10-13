@@ -32,46 +32,48 @@ class SettingsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
 
+    final narrow = MediaQuery.sizeOf(context).width < 560;
+    final title = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Settings',
+          style: AppType.heading(palette.textPrimary, size: 26, spacing: -0.6),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Everything ZON does, exactly how you want it.',
+          style: AppType.body(palette.textSecondary, size: 13.5),
+        ),
+      ],
+    );
+    final reset = MonoButton(
+      label: 'Reset all settings',
+      icon: Icons.restart_alt_rounded,
+      onTap: state.resetSettings,
+    );
+
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(34, 32, 34, 44),
+      padding: narrow
+          ? const EdgeInsets.fromLTRB(18, 12, 18, 32)
+          : const EdgeInsets.fromLTRB(34, 32, 34, 44),
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 860),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Settings',
-                          style: AppType.heading(
-                            palette.textPrimary,
-                            size: 26,
-                            spacing: -0.6,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Everything ZON does, exactly how you want it.',
-                          style: AppType.body(
-                            palette.textSecondary,
-                            size: 13.5,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  MonoButton(
-                    label: 'Reset all settings',
-                    icon: Icons.restart_alt_rounded,
-                    onTap: state.resetSettings,
-                  ),
-                ],
-              ),
+              if (narrow) ...[
+                title,
+                const SizedBox(height: 14),
+                reset,
+              ] else
+                Row(
+                  children: [
+                    Expanded(child: title),
+                    reset,
+                  ],
+                ),
               const SizedBox(height: 30),
               _section(context, 'GENERAL', [
                 _row(

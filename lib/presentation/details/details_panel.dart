@@ -152,7 +152,7 @@ class DetailsView extends StatelessWidget {
               ),
               const SizedBox(width: 16),
               Expanded(
-                child: _SpeedBars(
+                child: SpeedBars(
                   samples: state.speedHistoryFor(item.id),
                   height: 30,
                 ),
@@ -171,11 +171,11 @@ class DetailsView extends StatelessWidget {
             Row(
               children: [
                 Text(
-                  '${item.connections} / ${_ConnectionGrid.slots}',
+                  '${item.connections} / ${ConnectionGrid.slots}',
                   style: _figure(palette),
                 ),
                 const Spacer(),
-                _ConnectionGrid(connections: item.connections, live: moving),
+                ConnectionGrid(connections: item.connections, live: moving),
               ],
             ),
           ],
@@ -513,8 +513,8 @@ class _Toolbar extends StatelessWidget {
 }
 
 /// Bar chart of one download's recent speed, newest on the right.
-class _SpeedBars extends StatelessWidget {
-  const _SpeedBars({required this.samples, required this.height});
+class SpeedBars extends StatelessWidget {
+  const SpeedBars({super.key, required this.samples, required this.height});
 
   final List<double> samples;
   final double height;
@@ -527,7 +527,7 @@ class _SpeedBars extends StatelessWidget {
       height: height,
       child: CustomPaint(
         size: Size(double.infinity, height),
-        painter: _SpeedBarsPainter(
+        painter: SpeedBarsPainter(
           samples: samples.length > bars
               ? samples.sublist(samples.length - bars)
               : samples,
@@ -539,8 +539,8 @@ class _SpeedBars extends StatelessWidget {
   }
 }
 
-class _SpeedBarsPainter extends CustomPainter {
-  _SpeedBarsPainter({
+class SpeedBarsPainter extends CustomPainter {
+  SpeedBarsPainter({
     required this.samples,
     required this.glow,
     required this.idle,
@@ -552,7 +552,7 @@ class _SpeedBarsPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    const count = _SpeedBars.bars;
+    const count = SpeedBars.bars;
     final slot = size.width / count;
     final width = (slot * 0.45).clamp(1.5, 3.0);
     final peak = samples.fold<double>(1024, (a, b) => b > a ? b : a);
@@ -578,7 +578,7 @@ class _SpeedBarsPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_SpeedBarsPainter oldDelegate) =>
+  bool shouldRepaint(SpeedBarsPainter oldDelegate) =>
       oldDelegate.samples != samples ||
       oldDelegate.glow != glow ||
       oldDelegate.idle != idle;
@@ -586,11 +586,19 @@ class _SpeedBarsPainter extends CustomPainter {
 
 /// [slots] cells in two rows; the first [connections] light up while the
 /// download is moving.
-class _ConnectionGrid extends StatelessWidget {
-  const _ConnectionGrid({required this.connections, required this.live});
+class ConnectionGrid extends StatelessWidget {
+  const ConnectionGrid({
+    super.key,
+    required this.connections,
+    required this.live,
+    this.cell = const Size(6, 11),
+  });
 
   final int connections;
   final bool live;
+
+  /// Size of one connection cell.
+  final Size cell;
 
   /// Most connections one download may use (see the add dialog).
   static const int slots = 32;
@@ -600,12 +608,12 @@ class _ConnectionGrid extends StatelessWidget {
     final palette = context.palette;
     const perRow = slots ~/ 2;
 
-    Widget cell(int index) {
+    Widget box(int index) {
       final lit = live && index < connections;
       final used = index < connections;
       return Container(
-        width: 6,
-        height: 11,
+        width: cell.width,
+        height: cell.height,
         margin: const EdgeInsets.only(left: 3),
         decoration: BoxDecoration(
           color: lit ? palette.glow : Colors.transparent,
@@ -634,12 +642,12 @@ class _ConnectionGrid extends StatelessWidget {
       children: [
         Row(
           mainAxisSize: MainAxisSize.min,
-          children: [for (var i = 0; i < perRow; i++) cell(i)],
+          children: [for (var i = 0; i < perRow; i++) box(i)],
         ),
         const SizedBox(height: 4),
         Row(
           mainAxisSize: MainAxisSize.min,
-          children: [for (var i = perRow; i < slots; i++) cell(i)],
+          children: [for (var i = perRow; i < slots; i++) box(i)],
         ),
       ],
     );
