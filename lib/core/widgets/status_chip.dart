@@ -6,8 +6,8 @@ import '../theme/zon_palette.dart';
 
 /// State label for a download.
 ///
-/// States are differentiated with typography, iconography and contrast only —
-/// never with colour, in keeping with the monochrome identity.
+/// Live and finished transfers wear the glow color; every other state is told
+/// apart by typography, iconography and contrast.
 class StatusChip extends StatelessWidget {
   const StatusChip({super.key, required this.status, this.compact = false});
 
@@ -24,17 +24,17 @@ class StatusChip extends StatelessWidget {
 
     switch (status) {
       case DownloadStatus.downloading:
-        background = palette.textPrimary.withValues(alpha: 0.10);
-        border = palette.textPrimary.withValues(alpha: 0.22);
-        foreground = palette.textPrimary;
+        background = palette.glow.withValues(alpha: 0.10);
+        border = palette.glow.withValues(alpha: 0.30);
+        foreground = palette.glow;
       case DownloadStatus.verifying:
         background = palette.surfaceHighest;
         border = palette.border;
         foreground = palette.textSecondary;
       case DownloadStatus.completed:
-        background = palette.textPrimary.withValues(alpha: 0.14);
-        border = palette.textPrimary.withValues(alpha: 0.28);
-        foreground = palette.textPrimary;
+        background = palette.glow.withValues(alpha: 0.14);
+        border = palette.glow.withValues(alpha: 0.36);
+        foreground = palette.glow;
       case DownloadStatus.failed:
         background = palette.surfaceHighest;
         border = palette.textPrimary.withValues(alpha: 0.34);

@@ -139,6 +139,29 @@ void main() {
       expect(state.speedSamples.length, AppState.sampleWindow);
     });
 
+    test('each download keeps its own bounded speed history', () {
+      final item = state.downloads.firstWhere(
+        (item) => item.status == DownloadStatus.downloading,
+      );
+      for (var i = 0; i < AppState.itemSampleWindow + 5; i++) {
+        http.listener_!.onProgress(
+          item.id,
+          item.downloadedBytes + (i + 1) * 1000,
+          1000.0 + i,
+          total: item.sizeBytes,
+        );
+        state.tick(dt: const Duration(milliseconds: 400));
+      }
+
+      final history = state.speedHistoryFor(item.id);
+      expect(history.length, AppState.itemSampleWindow);
+      expect(history.last, 1000.0 + AppState.itemSampleWindow + 4);
+
+      state.removeDownload(item.id);
+      state.tick(dt: const Duration(milliseconds: 400));
+      expect(state.speedHistoryFor(item.id), isEmpty);
+    });
+
     test('queue promotes downloads while slots are free', () {
       state.pauseAll();
       expect(state.activeCount, 0);

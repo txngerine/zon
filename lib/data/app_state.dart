@@ -218,6 +218,10 @@ class AppState extends ChangeNotifier implements TransferListener {
   late List<String> _queueOrder;
   late List<double> _samples;
 
+  /// Per-download speed samples for the details panel, at most
+  /// [itemSampleWindow] each. Live only, not persisted.
+  final Map<String, List<double>> _itemSamples = {};
+
   /// Downloads currently handed to an engine.
   final Set<String> _running = {};
   final Map<String, _Progress> _pending = {};
@@ -256,6 +260,7 @@ class AppState extends ChangeNotifier implements TransferListener {
   String? _lastClipboard;
 
   static const int sampleWindow = 90;
+  static const int itemSampleWindow = 40;
   static const Duration _tickInterval = Duration(milliseconds: 400);
 
   // --------------------------------------------------------------------------
@@ -277,6 +282,10 @@ class AppState extends ChangeNotifier implements TransferListener {
   double get totalSpeed => _totalSpeed;
   double get peakSpeed => _peakSpeed;
   List<double> get speedSamples => List.unmodifiable(_samples);
+
+  /// Recent speed samples of one download, oldest first (empty if unknown).
+  List<double> speedHistoryFor(String id) =>
+      List.unmodifiable(_itemSamples[id] ?? const <double>[]);
   bool get engineRunning => _timer != null;
 
   MediaTools? get mediaTools => _tools;
@@ -341,6 +350,10 @@ class AppState extends ChangeNotifier implements TransferListener {
 
   int get pausedCount =>
       _downloads.where((item) => item.status == DownloadStatus.paused).length;
+
+  /// Bytes on disk across every download in the library.
+  int get totalDownloadedBytes =>
+      _downloads.fold(0, (total, item) => total + item.downloadedBytes);
 
   double get averageSpeed {
     final active = _samples.where((value) => value > 0);
@@ -1524,6 +1537,17 @@ class AppState extends ChangeNotifier implements TransferListener {
       _samples = _samples.sublist(_samples.length - sampleWindow);
     }
     if (_totalSpeed > _peakSpeed) _peakSpeed = _totalSpeed;
+
+    for (final item in _downloads) {
+      if (item.status != DownloadStatus.downloading) continue;
+      final history = _itemSamples.putIfAbsent(item.id, () => []);
+      history.add(item.speed);
+      if (history.length > itemSampleWindow) history.removeAt(0);
+    }
+    if (_itemSamples.isNotEmpty) {
+      final ids = {for (final item in _downloads) item.id};
+      _itemSamples.removeWhere((id, _) => !ids.contains(id));
+    }
 
     // Progress alone is cheap to lose; checkpoint it every few seconds.
     if (pending.isNotEmpty) _scheduleSave(delay: const Duration(seconds: 3));

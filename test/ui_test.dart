@@ -160,18 +160,43 @@ void main() {
         find.descendant(of: panel, matching: find.text(target.fileName)),
         findsWidgets,
       );
+      for (final section in [
+        'PROGRESS',
+        'SPEED',
+        'CONNECTIONS',
+        'SAVE TO',
+        'ADDITIONAL INFO',
+        'ADVANCED',
+      ]) {
+        expect(
+          find.descendant(of: panel, matching: find.text(section)),
+          findsOneWidget,
+          reason: section,
+        );
+      }
       expect(
-        find.descendant(of: panel, matching: find.text('STATISTICS')),
+        find.descendant(
+          of: panel,
+          matching: find.text('${target.connections} / 32'),
+        ),
         findsOneWidget,
       );
-      expect(
-        find.descendant(of: panel, matching: find.text('ADVANCED')),
-        findsOneWidget,
+
+      // Technical rows stay folded away until asked for.
+      final httpStatus = find.descendant(
+        of: panel,
+        matching: find.text('HTTP status'),
       );
-      expect(
-        find.descendant(of: panel, matching: find.text('Connections')),
-        findsOneWidget,
+      expect(httpStatus, findsNothing);
+      final advanced = find.descendant(
+        of: panel,
+        matching: find.text('ADVANCED'),
       );
+      await tester.ensureVisible(advanced);
+      await tester.pump();
+      await tester.tap(advanced);
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(httpStatus, findsOneWidget);
 
       await finish(tester);
     });
@@ -232,6 +257,24 @@ void main() {
 
       expect(find.text('No downloads yet.'), findsOneWidget);
       expect(find.text('Your downloads will appear here.'), findsOneWidget);
+
+      await finish(tester);
+    });
+
+    testWidgets('toasts disappear on their own', (tester) async {
+      final state = await pumpZon(tester);
+      // Let the splash finish: its rebuild would hide the bug.
+      await tester.pump(const Duration(milliseconds: 1600));
+      final item = state.downloads.first;
+      state.removeDownload(item.id);
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('Removed ${item.fileName}'), findsOneWidget);
+
+      // 2.4 s on screen, then the fade-out.
+      await tester.pump(const Duration(milliseconds: 2400));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(state.toast, isNull);
+      expect(find.text('Removed ${item.fileName}'), findsNothing);
 
       await finish(tester);
     });

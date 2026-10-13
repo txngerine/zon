@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 
 /// Semantic color system for ZON.
 ///
-/// The application is intentionally monochrome: blacks, whites and greys only.
-/// Every widget reads its colors from [ZonPalette] so the light and dark
-/// appearance modes can be swapped without touching component code.
+/// Blacks, whites and greys, plus one mint [glow] for live and finished
+/// transfers. Every widget reads its colors from [ZonPalette] so the light and
+/// dark appearance modes can be swapped without touching component code.
 @immutable
 class ZonPalette extends ThemeExtension<ZonPalette> {
   const ZonPalette({
@@ -22,6 +22,8 @@ class ZonPalette extends ThemeExtension<ZonPalette> {
     required this.track,
     required this.accent,
     required this.onAccent,
+    required this.glow,
+    required this.panel,
     required this.hover,
     required this.scrim,
     required this.shadow,
@@ -64,6 +66,12 @@ class ZonPalette extends ThemeExtension<ZonPalette> {
   /// Content painted on top of [accent].
   final Color onAccent;
 
+  /// Signal color: progress, live speed, completed downloads.
+  final Color glow;
+
+  /// Fill of the floating shell panels (sidebar, details, status bar).
+  final Color panel;
+
   /// Subtle interactive hover wash.
   final Color hover;
 
@@ -74,7 +82,7 @@ class ZonPalette extends ThemeExtension<ZonPalette> {
   final Color shadow;
 
   static const dark = ZonPalette(
-    background: Color(0xFF050505),
+    background: Color(0xFF030504),
     backgroundElevated: Color(0xFF0A0A0A),
     backgroundRaised: Color(0xFF111111),
     surface: Color(0xFF151515),
@@ -88,6 +96,8 @@ class ZonPalette extends ThemeExtension<ZonPalette> {
     track: Color(0xFF252525),
     accent: Color(0xFFFFFFFF),
     onAccent: Color(0xFF050505),
+    glow: Color(0xFF3DDC97),
+    panel: Color(0xE00B0D0C),
     hover: Color(0x0FFFFFFF),
     scrim: Color(0xB3000000),
     shadow: Color(0x66000000),
@@ -108,6 +118,8 @@ class ZonPalette extends ThemeExtension<ZonPalette> {
     track: Color(0xFFE8E8E8),
     accent: Color(0xFF0A0A0A),
     onAccent: Color(0xFFFFFFFF),
+    glow: Color(0xFF0E9F6E),
+    panel: Color(0xFFFFFFFF),
     hover: Color(0x0A000000),
     scrim: Color(0x59000000),
     shadow: Color(0x1A000000),
@@ -129,6 +141,8 @@ class ZonPalette extends ThemeExtension<ZonPalette> {
     Color? track,
     Color? accent,
     Color? onAccent,
+    Color? glow,
+    Color? panel,
     Color? hover,
     Color? scrim,
     Color? shadow,
@@ -148,6 +162,8 @@ class ZonPalette extends ThemeExtension<ZonPalette> {
       track: track ?? this.track,
       accent: accent ?? this.accent,
       onAccent: onAccent ?? this.onAccent,
+      glow: glow ?? this.glow,
+      panel: panel ?? this.panel,
       hover: hover ?? this.hover,
       scrim: scrim ?? this.scrim,
       shadow: shadow ?? this.shadow,
@@ -180,6 +196,8 @@ class ZonPalette extends ThemeExtension<ZonPalette> {
       track: Color.lerp(track, other.track, t)!,
       accent: Color.lerp(accent, other.accent, t)!,
       onAccent: Color.lerp(onAccent, other.onAccent, t)!,
+      glow: Color.lerp(glow, other.glow, t)!,
+      panel: Color.lerp(panel, other.panel, t)!,
       hover: Color.lerp(hover, other.hover, t)!,
       scrim: Color.lerp(scrim, other.scrim, t)!,
       shadow: Color.lerp(shadow, other.shadow, t)!,
