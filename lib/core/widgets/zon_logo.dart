@@ -28,7 +28,7 @@ class ZonLogo extends StatelessWidget {
   }
 }
 
-/// Vector reconstruction of the ZON mark, used only if the asset fails to load.
+/// Vector copy of the ZON mark, used only if the asset fails to load.
 class _FallbackMark extends StatelessWidget {
   const _FallbackMark({required this.size});
 
@@ -36,22 +36,43 @@ class _FallbackMark extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      color: const Color(0xFF111111),
-      alignment: Alignment.center,
-      child: Text(
-        'Z',
-        style: TextStyle(
-          color: const Color(0xFF1FE3A0),
-          fontSize: size * 0.56,
-          fontWeight: FontWeight.w800,
-          height: 1,
-        ),
-      ),
+    return CustomPaint(
+      size: Size.square(size),
+      painter: const ZonMarkPainter(),
     );
   }
+}
+
+/// The ZON mark: one rounded stroke (across, then down-left) and a dot on a
+/// green tile. Geometry is in a 248-unit box, as measured from the artwork.
+class ZonMarkPainter extends CustomPainter {
+  const ZonMarkPainter();
+
+  static const green = Color(0xFF00674F);
+  static const ink = Color(0xFF010101);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final scale = size.shortestSide / 248;
+    canvas.drawRect(Offset.zero & size, Paint()..color = green);
+    canvas.scale(scale);
+    canvas.drawPath(
+      Path()
+        ..moveTo(77.5, 74.5)
+        ..lineTo(170.5, 74.5)
+        ..lineTo(78.5, 170.5),
+      Paint()
+        ..color = ink
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 50.5
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round,
+    );
+    canvas.drawCircle(const Offset(169, 169), 25, Paint()..color = ink);
+  }
+
+  @override
+  bool shouldRepaint(ZonMarkPainter oldDelegate) => false;
 }
 
 /// Logo + wordmark used at the top of the sidebar and the mobile app bar.

@@ -14,6 +14,7 @@ import '../../data/app_state.dart';
 import '../../domain/models/app_settings.dart';
 import '../../domain/models/media_format.dart';
 import '../../engine/media/ytdlp.dart';
+import '../../engine/network_paths.dart';
 import '../common/browser_integration_dialog.dart';
 
 /// Complete settings screen organised in the sections defined by the product
@@ -31,46 +32,48 @@ class SettingsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
 
+    final narrow = MediaQuery.sizeOf(context).width < 560;
+    final title = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Settings',
+          style: AppType.heading(palette.textPrimary, size: 26, spacing: -0.6),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Everything ZON does, exactly how you want it.',
+          style: AppType.body(palette.textSecondary, size: 13.5),
+        ),
+      ],
+    );
+    final reset = MonoButton(
+      label: 'Reset all settings',
+      icon: Icons.restart_alt_rounded,
+      onTap: state.resetSettings,
+    );
+
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(34, 32, 34, 44),
+      padding: narrow
+          ? const EdgeInsets.fromLTRB(18, 12, 18, 32)
+          : const EdgeInsets.fromLTRB(34, 32, 34, 44),
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 860),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Settings',
-                          style: AppType.heading(
-                            palette.textPrimary,
-                            size: 26,
-                            spacing: -0.6,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Everything ZON does, exactly how you want it.',
-                          style: AppType.body(
-                            palette.textSecondary,
-                            size: 13.5,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  MonoButton(
-                    label: 'Reset all settings',
-                    icon: Icons.restart_alt_rounded,
-                    onTap: state.resetSettings,
-                  ),
-                ],
-              ),
+              if (narrow) ...[
+                title,
+                const SizedBox(height: 14),
+                reset,
+              ] else
+                Row(
+                  children: [
+                    Expanded(child: title),
+                    reset,
+                  ],
+                ),
               const SizedBox(height: 30),
               _section(context, 'GENERAL', [
                 _row(
@@ -279,22 +282,28 @@ class SettingsScreen extends StatelessWidget {
                 _switchRow(
                   context,
                   'Browser button',
-                  'Accept links from the ZON bookmarklet on 127.0.0.1',
+                  'Accept links from the ZON extension and bookmarklet on 127.0.0.1',
                   _settings.localApi,
                   (value) => _update(_settings.copyWith(localApi: value)),
                 ),
                 _row(
                   context,
-                  'Bookmarklet',
-                  'One click sends the page you are on — YouTube, Reels, files',
+                  'Browser extension',
+                  'Right-click any link or video to download it with ZON',
                   MonoButton(
                     label: 'Set up',
-                    icon: Icons.bookmark_add_outlined,
+                    icon: Icons.extension_outlined,
                     onTap: () => BrowserIntegrationDialog.show(context, state),
                   ),
                 ),
               ]),
               _section(context, 'NETWORK', [
+                _CombineNetworksRow(
+                  value: _settings.combineNetworks,
+                  onChanged: (value) =>
+                      _update(_settings.copyWith(combineNetworks: value)),
+                  row: _row,
+                ),
                 _row(
                   context,
                   'Proxy',
@@ -809,6 +818,66 @@ class _InlineFieldState extends State<_InlineField> {
 }
 
 /// yt-dlp / ffmpeg status and media download preferences.
+/// Toggle for combining interfaces, listing the ones ZON can see.
+class _CombineNetworksRow extends StatefulWidget {
+  const _CombineNetworksRow({
+    required this.value,
+    required this.onChanged,
+    required this.row,
+  });
+
+  final bool value;
+  final ValueChanged<bool> onChanged;
+  final Widget Function(BuildContext, String, String, Widget) row;
+
+  @override
+  State<_CombineNetworksRow> createState() => _CombineNetworksRowState();
+}
+
+class _CombineNetworksRowState extends State<_CombineNetworksRow> {
+  List<NetworkPath>? _paths;
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+  }
+
+  Future<void> _refresh() async {
+    final paths = await findNetworkPaths();
+    if (mounted) setState(() => _paths = paths);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final paths = _paths;
+    final names = paths?.map((path) => path.name).join(', ');
+    final String found;
+    if (paths == null) {
+      found = 'Looking for connections…';
+    } else if (paths.length < 2) {
+      found = paths.isEmpty
+          ? 'No connections found'
+          : 'Only one connection found ($names) — connect another to combine';
+    } else {
+      found = 'Using $names';
+    }
+    return widget.row(
+      context,
+      'Combine network connections',
+      'Download over Wi-Fi, Ethernet and tethered phones at once. Bypasses '
+          'VPNs. $found',
+      MonoSwitch(
+        value: widget.value,
+        onChanged: (value) {
+          widget.onChanged(value);
+          unawaited(_refresh());
+        },
+      ),
+    );
+  }
+}
+
 class _MediaSection extends StatelessWidget {
   const _MediaSection({
     required this.state,
@@ -842,6 +911,18 @@ class _MediaSection extends StatelessWidget {
     } else {
       ytDlpStatus =
           'Not installed — needed for YouTube, Reels, TikTok and 1000+ sites';
+    }
+
+    final hasPinterestDl = tools?.hasPinterestDl ?? false;
+    final pinterestStage = state.installStage;
+    final String pinterestStatus;
+    if (busy && pinterestStage != null && install == null) {
+      pinterestStatus = '$pinterestStage…';
+    } else if (hasPinterestDl) {
+      pinterestStatus = 'Found • ${tools!.pinterestDlPath}';
+    } else {
+      pinterestStatus =
+          'Optional — adds Pinterest boards, image pins and pin.it links';
     }
 
     final installCommand = Platform.isMacOS
@@ -891,6 +972,26 @@ class _MediaSection extends StatelessWidget {
               tooltip: 'Re-scan',
               onTap: busy ? null : () => unawaited(state.refreshMediaTools()),
             ),
+          ],
+        ),
+      ),
+      row(
+        context,
+        'pinterest-dl',
+        pinterestStatus,
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (!hasPinterestDl || tools!.isPinterestDlManaged)
+              MonoButton(
+                label: hasPinterestDl ? 'Update' : 'Install',
+                icon: hasPinterestDl
+                    ? Icons.system_update_alt_rounded
+                    : Icons.download_rounded,
+                onTap: busy || tools == null
+                    ? null
+                    : () => unawaited(state.installPinterestDl()),
+              ),
           ],
         ),
       ),

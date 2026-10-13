@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -183,6 +184,40 @@ void main() {
         isFalse,
       );
       expect(added, [_magnet]);
+    });
+
+    test('/hello checks the key without adding', () async {
+      Future<int> hello(String key) async {
+        final client = HttpClient();
+        try {
+          final response = await (await client.getUrl(
+            Uri.parse('http://127.0.0.1:16412/hello?t=$key'),
+          )).close();
+          await response.drain<void>();
+          return response.statusCode;
+        } finally {
+          client.close();
+        }
+      }
+
+      expect(await hello('k3y'), 200);
+      expect(await hello('nope'), 403);
+      expect(added, isEmpty);
+    });
+
+    test('browser extension files are all bundled', () {
+      final onDisk = Directory('assets/browser_extension')
+          .listSync()
+          .map((f) => f.uri.pathSegments.last)
+          .toSet();
+      expect(onDisk, AppState.browserExtensionFiles.toSet());
+      final manifest = jsonDecode(
+        File('assets/browser_extension/manifest.json').readAsStringSync(),
+      ) as Map<String, dynamic>;
+      expect(
+        manifest['host_permissions'],
+        contains('http://127.0.0.1:${LocalApiServer.defaultPort}/*'),
+      );
     });
 
     test('bookmarklet embeds the key', () {

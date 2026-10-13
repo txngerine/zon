@@ -4,11 +4,12 @@ import 'package:flutter/material.dart';
 
 import '../../core/theme/app_type.dart';
 import '../../core/theme/zon_palette.dart';
+import '../../core/utils/formatters.dart';
 import '../../core/widgets/zon_card.dart';
 import '../../data/app_state.dart';
 
-/// Compact transfer analytics: current rate, peak, average and a monochrome
-/// line graph that animates smoothly as samples arrive.
+/// Compact transfer analytics: current rate and its trend, peak, average,
+/// total downloaded and a glowing line graph that animates as samples arrive.
 class SpeedPanel extends StatelessWidget {
   const SpeedPanel({super.key, required this.state});
 
@@ -47,16 +48,9 @@ class SpeedPanel extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 10),
-              Text(
-                _format(state.totalSpeed),
-                style: TextStyle(
-                  color: palette.textPrimary,
-                  fontSize: 34,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: -1,
-                  fontFeatures: AppType.tabular,
-                  height: 1,
-                ),
+              _BigSpeed(
+                bytesPerSecond: state.totalSpeed,
+                trend: live ? _trend(state.speedSamples) : 0,
               ),
             ],
           );
@@ -71,13 +65,16 @@ class SpeedPanel extends StatelessWidget {
             ),
           );
 
+          final total = formatBytes(state.totalDownloadedBytes);
           final stats = Column(
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _StatBlock(label: 'PEAK', value: _format(state.peakSpeed)),
-              const SizedBox(height: 14),
+              const SizedBox(height: 12),
               _StatBlock(label: 'AVERAGE', value: _format(state.averageSpeed)),
+              const SizedBox(height: 12),
+              _StatBlock(label: 'TOTAL DOWNLOADED', value: total),
             ],
           );
 
@@ -101,6 +98,9 @@ class SpeedPanel extends StatelessWidget {
                         value: _format(state.averageSpeed),
                       ),
                     ),
+                    Expanded(
+                      child: _StatBlock(label: 'TOTAL', value: total),
+                    ),
                   ],
                 ),
               ],
@@ -111,7 +111,14 @@ class SpeedPanel extends StatelessWidget {
             children: [
               header,
               Expanded(child: graph),
-              SizedBox(width: 120, child: stats),
+              Container(
+                width: 132,
+                padding: const EdgeInsets.only(left: 18),
+                decoration: BoxDecoration(
+                  border: Border(left: BorderSide(color: palette.border)),
+                ),
+                child: stats,
+              ),
             ],
           );
         },
@@ -120,7 +127,13 @@ class SpeedPanel extends StatelessWidget {
   }
 
   static String _format(double bytesPerSecond) {
-    if (bytesPerSecond < 1024) return '0 B/s';
+    final (value, unit) = _split(bytesPerSecond);
+    return '$value $unit';
+  }
+
+  /// "48.4", "MB/s"
+  static (String, String) _split(double bytesPerSecond) {
+    if (bytesPerSecond < 1024) return ('0', 'B/s');
     const units = ['B/s', 'KB/s', 'MB/s', 'GB/s'];
     var value = bytesPerSecond;
     var unit = 0;
@@ -131,7 +144,72 @@ class SpeedPanel extends StatelessWidget {
     final text = value >= 100
         ? value.toStringAsFixed(0)
         : value.toStringAsFixed(1);
-    return '$text ${units[unit]}';
+    return (text, units[unit]);
+  }
+
+  /// 1 when the latest sample beats the few before it by 8%, -1 when it
+  /// trails them by as much, else 0.
+  static int _trend(List<double> samples) {
+    if (samples.length < 6) return 0;
+    final recent = samples.last;
+    final before = samples.sublist(samples.length - 6, samples.length - 1);
+    final base = before.reduce((a, b) => a + b) / before.length;
+    if (base <= 0) return recent > 0 ? 1 : 0;
+    if (recent > base * 1.08) return 1;
+    if (recent < base * 0.92) return -1;
+    return 0;
+  }
+}
+
+/// "48.4 MB/s" with a lighter unit and a trend arrow.
+class _BigSpeed extends StatelessWidget {
+  const _BigSpeed({required this.bytesPerSecond, required this.trend});
+
+  final double bytesPerSecond;
+  final int trend;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final (value, unit) = SpeedPanel._split(bytesPerSecond);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.baseline,
+      textBaseline: TextBaseline.alphabetic,
+      children: [
+        Text(
+          value,
+          style: TextStyle(
+            color: palette.textPrimary,
+            fontSize: 38,
+            fontWeight: FontWeight.w600,
+            letterSpacing: -1.2,
+            fontFeatures: AppType.tabular,
+            height: 1,
+          ),
+        ),
+        const SizedBox(width: 7),
+        Text(
+          unit,
+          style: TextStyle(
+            color: palette.textSecondary,
+            fontSize: 20,
+            fontWeight: FontWeight.w400,
+            height: 1,
+          ),
+        ),
+        if (trend != 0) ...[
+          const SizedBox(width: 8),
+          Icon(
+            trend > 0
+                ? Icons.keyboard_double_arrow_up_rounded
+                : Icons.keyboard_double_arrow_down_rounded,
+            size: 22,
+            color: trend > 0 ? palette.glow : palette.textMuted,
+          ),
+        ],
+      ],
+    );
   }
 }
 
@@ -156,7 +234,7 @@ class _StatBlock extends StatelessWidget {
         Text(
           value,
           style: TextStyle(
-            color: palette.textSecondary,
+            color: palette.textPrimary,
             fontSize: 15,
             fontWeight: FontWeight.w600,
             fontFeatures: AppType.tabular,
@@ -198,7 +276,7 @@ class _LiveDotState extends State<_LiveDot>
         width: 6,
         height: 6,
         decoration: BoxDecoration(
-          color: context.palette.textPrimary,
+          color: context.palette.glow,
           shape: BoxShape.circle,
         ),
       ),
@@ -206,7 +284,7 @@ class _LiveDotState extends State<_LiveDot>
   }
 }
 
-/// Smoothly animated monochrome line chart.
+/// Smoothly animated line chart in the glow color.
 class SpeedGraph extends StatefulWidget {
   const SpeedGraph({super.key, required this.samples, this.height = 100});
 
@@ -274,7 +352,7 @@ class _SpeedGraphState extends State<SpeedGraph>
           size: Size(double.infinity, widget.height),
           painter: _SpeedGraphPainter(
             values: _controller.isAnimating ? _current() : _to,
-            line: palette.textPrimary,
+            line: palette.glow,
             grid: palette.border,
           ),
         );
@@ -338,23 +416,39 @@ class _SpeedGraphPainter extends CustomPainter {
         ..shader = LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [line.withValues(alpha: 0.16), line.withValues(alpha: 0.0)],
+          colors: [line.withValues(alpha: 0.22), line.withValues(alpha: 0.0)],
         ).createShader(Offset.zero & size),
     );
 
+    // Blurred copy underneath makes the line glow.
     canvas.drawPath(
       path,
       Paint()
-        ..color = line.withValues(alpha: 0.92)
+        ..color = line.withValues(alpha: 0.55)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.6
+        ..strokeWidth = 5
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+    );
+    canvas.drawPath(
+      path,
+      Paint()
+        ..shader = LinearGradient(colors: [line.withValues(alpha: 0.35), line])
+            .createShader(Offset.zero & size)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round,
     );
 
     final last = points.last;
-    canvas.drawCircle(last, 7, Paint()..color = line.withValues(alpha: 0.14));
-    canvas.drawCircle(last, 3, Paint()..color = line);
+    canvas.drawCircle(
+      last,
+      9,
+      Paint()
+        ..color = line.withValues(alpha: 0.35)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
+    );
+    canvas.drawCircle(last, 4, Paint()..color = Colors.white);
   }
 
   @override

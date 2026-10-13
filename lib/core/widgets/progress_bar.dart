@@ -10,6 +10,7 @@ class ZonProgressBar extends StatefulWidget {
     required this.value,
     this.height = 4,
     this.active = false,
+    this.muted = false,
     this.radius,
   });
 
@@ -17,6 +18,9 @@ class ZonProgressBar extends StatefulWidget {
   final double value;
   final double height;
   final bool active;
+
+  /// Grey fill for transfers that are not moving (paused, queued, failed).
+  final bool muted;
   final double? radius;
 
   @override
@@ -56,6 +60,7 @@ class _ZonProgressBarState extends State<ZonProgressBar>
   Widget build(BuildContext context) {
     final palette = context.palette;
     final radius = widget.radius ?? widget.height / 2;
+    final fill = widget.muted ? palette.textMuted : palette.glow;
 
     return TweenAnimationBuilder<double>(
       tween: Tween<double>(begin: 0, end: widget.value.clamp(0.0, 1.0)),
@@ -77,10 +82,7 @@ class _ZonProgressBarState extends State<ZonProgressBar>
               child: Container(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
-                    colors: [
-                      palette.textPrimary.withValues(alpha: 0.7),
-                      palette.textPrimary,
-                    ],
+                    colors: [fill.withValues(alpha: 0.7), fill],
                   ),
                 ),
                 child: widget.active

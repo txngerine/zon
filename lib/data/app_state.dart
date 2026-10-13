@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:path_provider/path_provider.dart';
 
 import '../core/utils/formatters.dart';
@@ -14,7 +15,9 @@ import '../engine/engine.dart';
 import '../engine/http_engine.dart';
 import '../engine/media/media_engine.dart';
 import '../engine/media/media_sites.dart';
+import '../engine/media/pinterest.dart';
 import '../engine/media/ytdlp.dart';
+import '../engine/page_image.dart';
 import '../engine/torrent/torrent_engine.dart';
 import '../platform/local_api.dart';
 import '../platform/desktop_bridge.dart';
@@ -59,6 +62,7 @@ class AppState extends ChangeNotifier implements TransferListener {
     TransferEngine? mediaEngine,
     TransferEngine? torrentEngine,
     MediaTools? mediaTools,
+    PageImageFinder? pageImageFinder,
     this._store,
     this._desktop = const DesktopBridge.noop(),
     List<DownloadItem>? downloads,
@@ -70,7 +74,8 @@ class AppState extends ChangeNotifier implements TransferListener {
   }) : _http = httpEngine ?? IdleEngine(),
        _media = mediaEngine ?? IdleEngine(),
        _torrent = torrentEngine ?? IdleEngine(),
-       _tools = mediaTools {
+       _tools = mediaTools,
+       _findImage = pageImageFinder {
     _http.listener = this;
     _media.listener = this;
     _torrent.listener = this;
@@ -87,6 +92,7 @@ class AppState extends ChangeNotifier implements TransferListener {
     _samples = List<double>.filled(sampleWindow, 0);
     _totalSpeed = 0;
     _selectedId = _downloads.isEmpty ? null : _downloads.first.id;
+    _lookUpImage(_selectedId);
   }
 
   /// Builds the production state: real engines, the on-disk library and
@@ -140,6 +146,7 @@ class AppState extends ChangeNotifier implements TransferListener {
         stateDir: '${support.path}${sep}torrent',
       ),
       mediaTools: tools,
+      pageImageFinder: findPageImage,
       store: store,
       desktop: SystemBridge(),
       downloads: restored,
@@ -216,6 +223,10 @@ class AppState extends ChangeNotifier implements TransferListener {
   late List<String> _queueOrder;
   late List<double> _samples;
 
+  /// Per-download speed samples for the details panel, at most
+  /// [itemSampleWindow] each. Live only, not persisted.
+  final Map<String, List<double>> _itemSamples = {};
+
   /// Downloads currently handed to an engine.
   final Set<String> _running = {};
   final Map<String, _Progress> _pending = {};
@@ -233,6 +244,28 @@ class AppState extends ChangeNotifier implements TransferListener {
   double _elapsedCarry = 0;
   bool _toolsPending = false;
   bool _disposed = false;
+
+  bool _browserLinkReady = false;
+  String? _browserLinkProblem;
+
+  /// Whether the extension/bookmarklet server is listening.
+  bool get browserLinkReady => _browserLinkReady;
+
+  /// Why it is not, when known (port taken, another ZON running).
+  String? get browserLinkProblem => _browserLinkProblem;
+
+  void setBrowserLink({required bool ready, String? problem}) {
+    if (ready == _browserLinkReady && problem == _browserLinkProblem) return;
+    _browserLinkReady = ready;
+    _browserLinkProblem = problem;
+    notifyListeners();
+  }
+
+  /// Finds artwork for plain file downloads; null disables lookups.
+  final PageImageFinder? _findImage;
+
+  /// Downloads whose artwork was already looked up this session.
+  final Set<String> _imageLookups = {};
 
   late AppSettings _settings;
   AppSection _section = AppSection.all;
@@ -254,6 +287,7 @@ class AppState extends ChangeNotifier implements TransferListener {
   String? _lastClipboard;
 
   static const int sampleWindow = 90;
+  static const int itemSampleWindow = 40;
   static const Duration _tickInterval = Duration(milliseconds: 400);
 
   // --------------------------------------------------------------------------
@@ -275,6 +309,10 @@ class AppState extends ChangeNotifier implements TransferListener {
   double get totalSpeed => _totalSpeed;
   double get peakSpeed => _peakSpeed;
   List<double> get speedSamples => List.unmodifiable(_samples);
+
+  /// Recent speed samples of one download, oldest first (empty if unknown).
+  List<double> speedHistoryFor(String id) =>
+      List.unmodifiable(_itemSamples[id] ?? const <double>[]);
   bool get engineRunning => _timer != null;
 
   MediaTools? get mediaTools => _tools;
@@ -339,6 +377,10 @@ class AppState extends ChangeNotifier implements TransferListener {
 
   int get pausedCount =>
       _downloads.where((item) => item.status == DownloadStatus.paused).length;
+
+  /// Bytes on disk across every download in the library.
+  int get totalDownloadedBytes =>
+      _downloads.fold(0, (total, item) => total + item.downloadedBytes);
 
   double get averageSpeed {
     final active = _samples.where((value) => value > 0);
@@ -449,7 +491,32 @@ class AppState extends ChangeNotifier implements TransferListener {
   void select(String? id) {
     if (_selectedId == id) return;
     _selectedId = id;
+    _lookUpImage(id);
     notifyListeners();
+  }
+
+  /// Fills in [DownloadItem.thumbnailUrl] for a plain file download from
+  /// the file itself or its website, once per session.
+  void _lookUpImage(String? id) {
+    final find = _findImage;
+    final item = id == null ? null : _find(id);
+    if (find == null ||
+        item == null ||
+        item.isMedia ||
+        item.isTorrent ||
+        item.thumbnailUrl != null ||
+        !_imageLookups.add(item.id)) {
+      return;
+    }
+    unawaited(
+      find(item.url, userAgent: _settings.userAgent, proxy: _settings.proxy)
+          .then((image) {
+            if (_disposed || image == null) return;
+            _update(item.id, (item) => item.copyWith(thumbnailUrl: image));
+            _scheduleSave();
+          })
+          .catchError((_) {}),
+    );
   }
 
   void clearSelection() {
@@ -479,6 +546,7 @@ class AppState extends ChangeNotifier implements TransferListener {
     String createdVia = 'Manual',
     bool notify = true,
     bool? lockName,
+    String? source,
   }) {
     final link = url.trim();
     final site = detectMediaSite(link);
@@ -515,7 +583,7 @@ class AppState extends ChangeNotifier implements TransferListener {
         : savePath.trim();
     path = expandHome(path, environment: Platform.environment);
     if (createSubfolder) {
-      path = '$path${Platform.pathSeparator}${site?.name ?? host}';
+      path = '$path${Platform.pathSeparator}${source ?? site?.name ?? host}';
     }
 
     final now = DateTime.now();
@@ -529,7 +597,7 @@ class AppState extends ChangeNotifier implements TransferListener {
       id: _uniqueId(now),
       fileName: name,
       url: link,
-      source: isTorrent ? 'BitTorrent' : (site?.name ?? host),
+      source: source ?? (isTorrent ? 'BitTorrent' : (site?.name ?? host)),
       sizeBytes: 0,
       downloadedBytes: 0,
       status: DownloadStatus.queued,
@@ -554,6 +622,7 @@ class AppState extends ChangeNotifier implements TransferListener {
     _downloads = [item, ..._downloads];
     _queueOrder = [..._queueOrder, item.id];
     _selectedId = item.id;
+    _lookUpImage(item.id);
     if (canStart) _start(item.id);
     _changed();
     if (notify) {
@@ -985,6 +1054,36 @@ class AppState extends ChangeNotifier implements TransferListener {
     }
   }
 
+  Future<bool> installPinterestDl() async {
+    final tools = _tools;
+    if (tools == null || _toolsBusy) return false;
+    final updating = tools.hasPinterestDl;
+    _toolsBusy = true;
+    _installStage = 'Installing pinterest-dl';
+    notifyListeners();
+    try {
+      await tools.installPinterestDl(
+        onStage: (stage) {
+          _installStage = stage;
+          notifyListeners();
+        },
+      );
+      showToast(
+        updating
+            ? 'pinterest-dl is up to date'
+            : 'pinterest-dl installed — Pinterest boards and pins are ready',
+      );
+      return true;
+    } catch (error) {
+      showToast('$error');
+      return false;
+    } finally {
+      _toolsBusy = false;
+      _installStage = null;
+      if (!_disposed) notifyListeners();
+    }
+  }
+
   Future<bool> installAria2() async {
     final tools = _tools;
     if (tools == null || _toolsBusy) return false;
@@ -1055,7 +1154,41 @@ class AppState extends ChangeNotifier implements TransferListener {
   /// Marks [text] as seen so the clipboard watcher ignores it.
   void markClipboardSeen(String? text) => _lastClipboard = text?.trim();
 
-  /// Entry point for links sent by the browser bookmarklet.
+  /// Files of the "Send to ZON" extension under `assets/browser_extension/`.
+  static const browserExtensionFiles = [
+    'manifest.json',
+    'background.js',
+    'options.html',
+    'options.js',
+    'icon16.png',
+    'icon32.png',
+    'icon48.png',
+    'icon128.png',
+  ];
+
+  /// Writes the bundled browser extension to the app-support folder (fresh
+  /// each time, so an app update also updates it) and shows it in the file
+  /// manager for "Load unpacked". Returns the folder, or null on failure.
+  Future<String?> revealBrowserExtension() async {
+    if (dataDir.isEmpty) return null;
+    final sep = Platform.pathSeparator;
+    final dir = Directory('$dataDir${sep}browser_extension');
+    try {
+      await dir.create(recursive: true);
+      for (final name in browserExtensionFiles) {
+        final data = await rootBundle.load('assets/browser_extension/$name');
+        await File('${dir.path}$sep$name')
+            .writeAsBytes(data.buffer.asUint8List(), flush: true);
+      }
+    } catch (_) {
+      showToast('Could not unpack the browser extension');
+      return null;
+    }
+    await _desktop.reveal(dir.path);
+    return dir.path;
+  }
+
+  /// Entry point for links sent by the browser extension or bookmarklet.
   Future<void> addFromBrowser(String url, {MediaFormat? format}) async {
     _section = AppSection.all;
     final count = await addLink(
@@ -1084,6 +1217,25 @@ class AppState extends ChangeNotifier implements TransferListener {
     String? speedLimit,
     String createdVia = 'Manual',
   }) async {
+    if (isPinterestUrl(url) && (_tools?.hasPinterestDl ?? false)) {
+      showToast('Reading Pinterest…');
+      try {
+        final pins = await _tools!.resolvePinterest(url);
+        return _createPinterestDownloads(
+          pins,
+          format: mediaFormat,
+          savePath: savePath,
+          connections: connections,
+          priority: priority,
+          startImmediately: startImmediately,
+          createSubfolder: createSubfolder,
+          speedLimit: speedLimit,
+          createdVia: createdVia,
+        );
+      } catch (_) {
+        // Fall through to yt-dlp, which handles single video pins too.
+      }
+    }
     if (looksLikePlaylist(url) && (_tools?.hasYtDlp ?? false)) {
       showToast('Reading playlist…');
       try {
@@ -1116,6 +1268,65 @@ class AppState extends ChangeNotifier implements TransferListener {
       createdVia: createdVia,
     );
     return 1;
+  }
+
+  /// Queues resolved Pinterest pins: videos as video (or audio when asked),
+  /// image pins as the original image.
+  int _createPinterestDownloads(
+    List<PinterestPin> pins, {
+    MediaFormat? format,
+    String? savePath,
+    int? connections,
+    DownloadPriority priority = DownloadPriority.normal,
+    bool startImmediately = true,
+    bool createSubfolder = false,
+    String? speedLimit,
+    String createdVia = 'Manual',
+  }) {
+    for (final pin in pins) {
+      final video = pin.videoUrl;
+      final wantsAudio = format?.isAudio ?? false;
+      final isPlainMp4 =
+          video != null &&
+          Uri.tryParse(video)?.path.toLowerCase().endsWith('.mp4') == true;
+      final DownloadKind kind;
+      final String url;
+      final String name;
+      if (video == null) {
+        // Image pin: keep the image's own extension.
+        url = pin.imageUrl;
+        kind = DownloadKind.file;
+        final ext = fileNameFromUrl(url, fallback: 'pin.jpg').split('.').last;
+        name = '${pin.title}.$ext';
+      } else if (isPlainMp4 && !wantsAudio) {
+        url = video;
+        kind = DownloadKind.file;
+        name = '${pin.title}.mp4';
+      } else {
+        // HLS needs yt-dlp to stitch fragments; audio needs its conversion.
+        url = video;
+        kind = DownloadKind.media;
+        name = pin.title;
+      }
+      createDownload(
+        url: url,
+        fileName: name,
+        savePath: savePath,
+        connections: connections,
+        priority: priority,
+        startImmediately: startImmediately,
+        createSubfolder: createSubfolder,
+        kind: kind,
+        mediaFormat: kind == DownloadKind.media ? format : null,
+        speedLimit: speedLimit,
+        thumbnailUrl: pin.imageUrl,
+        createdVia: createdVia,
+        notify: pins.length == 1,
+        source: 'Pinterest',
+      );
+    }
+    if (pins.length > 1) showToast('Added ${pins.length} pins from Pinterest');
+    return pins.length;
   }
 
   // --------------------------------------------------------------------------
@@ -1380,6 +1591,17 @@ class AppState extends ChangeNotifier implements TransferListener {
     }
     if (_totalSpeed > _peakSpeed) _peakSpeed = _totalSpeed;
 
+    for (final item in _downloads) {
+      if (item.status != DownloadStatus.downloading) continue;
+      final history = _itemSamples.putIfAbsent(item.id, () => []);
+      history.add(item.speed);
+      if (history.length > itemSampleWindow) history.removeAt(0);
+    }
+    if (_itemSamples.isNotEmpty) {
+      final ids = {for (final item in _downloads) item.id};
+      _itemSamples.removeWhere((id, _) => !ids.contains(id));
+    }
+
     // Progress alone is cheap to lose; checkpoint it every few seconds.
     if (pending.isNotEmpty) _scheduleSave(delay: const Duration(seconds: 3));
     notifyListeners();
@@ -1491,6 +1713,7 @@ class AppState extends ChangeNotifier implements TransferListener {
   TransferOptions _optionsFor(DownloadItem item) => TransferOptions(
     userAgent: _settings.userAgent,
     proxy: _settings.proxy,
+    combineNetworks: _settings.combineNetworks,
     connectionTimeout: Duration(seconds: _settings.connectionTimeout),
     requestTimeout: Duration(seconds: _settings.requestTimeout),
     retryCount: _settings.retryCount,

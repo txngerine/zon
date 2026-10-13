@@ -136,19 +136,24 @@ class HistoryScreen extends StatelessWidget {
                 final showDownloaded = width > 900;
                 final showDate = width > 1040;
                 final showDuration = width > 1140;
+                // Phones: no columns, actions behind a menu (no hover).
+                final compact = width < 560;
 
                 return Column(
                   children: [
-                    _HeaderRow(
-                      showDownloaded: showDownloaded,
-                      showDate: showDate,
-                      showDuration: showDuration,
-                    ),
-                    const SizedBox(height: 6),
+                    if (!compact) ...[
+                      _HeaderRow(
+                        showDownloaded: showDownloaded,
+                        showDate: showDate,
+                        showDuration: showDuration,
+                      ),
+                      const SizedBox(height: 6),
+                    ],
                     for (final entry in entries)
                       _HistoryRow(
                         key: ValueKey(entry.id),
                         entry: entry,
+                        compact: compact,
                         showDownloaded: showDownloaded,
                         showDate: showDate,
                         showDuration: showDuration,
@@ -267,6 +272,7 @@ class _HistoryRow extends StatefulWidget {
   const _HistoryRow({
     super.key,
     required this.entry,
+    this.compact = false,
     required this.showDownloaded,
     required this.showDate,
     required this.showDuration,
@@ -276,6 +282,9 @@ class _HistoryRow extends StatefulWidget {
   });
 
   final HistoryEntry entry;
+
+  /// Phone layout: size and date under the name, actions in a menu.
+  final bool compact;
   final bool showDownloaded;
   final bool showDate;
   final bool showDuration;
@@ -311,6 +320,8 @@ class _HistoryRowState extends State<_HistoryRow> {
         ),
       );
     }
+
+    if (widget.compact) return _compact(palette);
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
@@ -401,6 +412,94 @@ class _HistoryRowState extends State<_HistoryRow> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _compact(ZonPalette palette) {
+    final entry = widget.entry;
+    PopupMenuItem<VoidCallback> entryItem(
+      IconData icon,
+      String label,
+      VoidCallback action,
+    ) => PopupMenuItem(
+      value: action,
+      height: 40,
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: palette.textSecondary),
+          const SizedBox(width: 12),
+          Text(label, style: AppType.body(palette.textPrimary, size: 13)),
+        ],
+      ),
+    );
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(12, 10, 4, 10),
+      decoration: BoxDecoration(
+        color: palette.surface.withValues(alpha: 0.82),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: palette.border),
+      ),
+      child: Row(
+        children: [
+          FileGlyph(fileName: entry.fileName, size: 38),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  entry.fileName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppType.body(
+                    palette.textPrimary,
+                    size: 13,
+                    weight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${formatBytes(entry.sizeBytes)}  •  '
+                  '${formatDateTime(entry.date)}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppType.numeric(palette.textMuted, size: 11),
+                ),
+                const SizedBox(height: 6),
+                StatusChip(status: entry.status, compact: true),
+              ],
+            ),
+          ),
+          PopupMenuButton<VoidCallback>(
+            tooltip: 'Actions',
+            onSelected: (action) => action(),
+            icon: Icon(
+              Icons.more_vert_rounded,
+              size: 20,
+              color: palette.textSecondary,
+            ),
+            itemBuilder: (_) => [
+              entryItem(
+                Icons.folder_open_rounded,
+                'Open folder',
+                widget.onOpenFolder,
+              ),
+              entryItem(
+                Icons.refresh_rounded,
+                'Redownload',
+                widget.onRedownload,
+              ),
+              entryItem(
+                Icons.delete_outline_rounded,
+                'Remove',
+                widget.onRemove,
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

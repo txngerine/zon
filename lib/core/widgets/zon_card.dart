@@ -52,7 +52,8 @@ class _ZonCardState extends State<ZonCard> {
       background = palette.surfaceHigh;
       border = palette.borderStrong;
     } else {
-      background = palette.surface;
+      // Lets the space background show through a little.
+      background = palette.surface.withValues(alpha: 0.82);
       border = palette.border;
     }
 

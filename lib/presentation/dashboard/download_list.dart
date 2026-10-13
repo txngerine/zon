@@ -70,6 +70,7 @@ class DownloadListSection extends StatelessWidget {
   }
 
   List<Widget> _buildCards(List<DownloadItem> items, ZonPalette palette) {
+    if (state.viewMode == ViewMode.grid) return [_buildGrid(items)];
     final compact = state.viewMode == ViewMode.compact;
     return [
       for (var i = 0; i < items.length; i++)
@@ -89,6 +90,42 @@ class DownloadListSection extends StatelessWidget {
           ),
         ),
     ];
+  }
+
+  /// Tiles at least [_minTileWidth] wide, as many per row as fit.
+  static const double _minTileWidth = 230;
+  static const double _gridGap = 12;
+
+  Widget _buildGrid(List<DownloadItem> items) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final columns = ((width + _gridGap) / (_minTileWidth + _gridGap))
+            .floor()
+            .clamp(1, 6);
+        final tile = (width - _gridGap * (columns - 1)) / columns;
+        return Wrap(
+          spacing: _gridGap,
+          runSpacing: _gridGap,
+          children: [
+            for (var i = 0; i < items.length; i++)
+              _Enter(
+                key: ValueKey(items[i].id),
+                index: i,
+                child: SizedBox(
+                  width: tile,
+                  child: DownloadGridTile(
+                    item: items[i],
+                    selected: state.selected?.id == items[i].id,
+                    onTap: () => onCardTap(items[i]),
+                    onAction: onCardAction,
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
   }
 
   String _emptyTitle() {
@@ -371,6 +408,7 @@ class _ViewToggle extends StatelessWidget {
         children: [
           button(Icons.view_list_rounded, ViewMode.list, 'List view'),
           button(Icons.density_small_rounded, ViewMode.compact, 'Compact view'),
+          button(Icons.grid_view_rounded, ViewMode.grid, 'Grid view'),
         ],
       ),
     );

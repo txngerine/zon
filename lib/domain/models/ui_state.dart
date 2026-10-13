@@ -87,7 +87,7 @@ enum SortOption {
   };
 }
 
-enum ViewMode { list, compact }
+enum ViewMode { list, compact, grid }
 
 /// History status filters.
 enum HistoryFilter {

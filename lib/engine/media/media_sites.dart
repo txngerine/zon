@@ -38,7 +38,11 @@ const mediaSites = <MediaSite>[
   MediaSite('Twitch', ['twitch.tv']),
   MediaSite('Dailymotion', ['dailymotion.com', 'dai.ly']),
   MediaSite('Bilibili', ['bilibili.com', 'b23.tv']),
-  MediaSite('Pinterest', ['pinterest.com', 'pin.it'], path: r'^/pin/|^/\w+$'),
+  MediaSite('Pinterest', [
+    'pinterest.com', 'pin.it', 'pinterest.co.uk', 'pinterest.ca', //
+    'pinterest.de', 'pinterest.fr', 'pinterest.es', 'pinterest.it',
+    'pinterest.com.au', 'pinterest.com.mx', 'pinterest.jp',
+  ], path: r'^/pin/|^/\w+$'),
   MediaSite('Bandcamp', ['bandcamp.com'], path: r'^/(track|album)/'),
   MediaSite('Threads', ['threads.net', 'threads.com'], path: r'/post/'),
   MediaSite('Snapchat', ['snapchat.com'], path: r'^/(spotlight|t)/'),

@@ -4,18 +4,16 @@ import '../../core/theme/app_type.dart';
 import '../../core/theme/zon_palette.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/widgets/empty_state.dart';
-import '../../core/widgets/file_glyph.dart';
 import '../../core/widgets/mono_button.dart';
 import '../../core/widgets/mono_dropdown.dart';
 import '../../core/widgets/progress_bar.dart';
-import '../../core/widgets/status_chip.dart';
 import '../../data/app_state.dart';
 import '../../domain/models/download.dart';
+import '../common/artwork_preview.dart';
 import '../dashboard/download_card.dart';
-import '../dashboard/speed_panel.dart';
 
-/// Right-hand details panel: full statistics, advanced metadata, transfer
-/// graph and controls for the selected download.
+/// Right-hand details panel: preview, progress, live speed, connections,
+/// save location, metadata and controls for the selected download.
 class DetailsPanel extends StatelessWidget {
   const DetailsPanel({
     super.key,
@@ -35,9 +33,11 @@ class DetailsPanel extends StatelessWidget {
 
     return Container(
       width: 340,
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: palette.backgroundRaised,
-        border: Border(left: BorderSide(color: palette.border)),
+        color: palette.panel,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: palette.border),
       ),
       child: item == null
           ? const Center(
@@ -81,80 +81,42 @@ class DetailsView extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final eta = item.etaSeconds;
+    final moving = item.status == DownloadStatus.downloading;
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(22, 22, 22, 26),
+      padding: const EdgeInsets.fromLTRB(22, 18, 22, 26),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              FileGlyph(
-                fileName: item.fileName,
-                thumbnailUrl: item.thumbnailUrl,
-                icon: item.isTorrent ? Icons.hub_outlined : null,
-                size: 54,
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      item.fileName,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppType.body(
-                        palette.textPrimary,
-                        size: 15,
-                        weight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      item.source,
-                      style: AppType.body(palette.textMuted, size: 12),
-                    ),
-                  ],
-                ),
-              ),
-              if (onClose != null) ...[
-                const SizedBox(width: 6),
-                IconButton(
-                  onPressed: onClose,
-                  tooltip: 'Close',
-                  icon: Icon(
-                    Icons.close_rounded,
-                    size: 18,
-                    color: palette.textSecondary,
-                  ),
-                ),
-              ],
-            ],
+          _Toolbar(item: item, onAction: onAction, onClose: onClose),
+          const SizedBox(height: 16),
+          ArtworkPreview(item: item),
+          const SizedBox(height: 16),
+          Text(
+            item.fileName,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: AppType.body(
+              palette.textPrimary,
+              size: 16,
+              weight: FontWeight.w600,
+            ),
           ),
-          const SizedBox(height: 22),
-          Row(
-            children: [
-              Text('PROGRESS', style: AppType.eyebrow(palette.textMuted)),
-              const Spacer(),
-              Text(
-                formatPercent(item.progress),
-                style: TextStyle(
-                  color: palette.textPrimary,
-                  fontSize: 26,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.8,
-                  fontFeatures: AppType.tabular,
-                  height: 1,
-                ),
-              ),
-            ],
+          const SizedBox(height: 5),
+          Text(
+            shortUrl(item.url),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: AppType.body(palette.textMuted, size: 12),
           ),
+          const _Divider(),
+          _Eyebrow('PROGRESS'),
+          Text(formatPercent(item.progress), style: _figure(palette)),
           const SizedBox(height: 12),
           ZonProgressBar(
             value: item.progress,
-            active: item.status == DownloadStatus.downloading,
+            active: moving,
+            muted: !moving && item.status != DownloadStatus.completed,
             height: 6,
           ),
           const SizedBox(height: 10),
@@ -165,128 +127,163 @@ class DetailsView extends StatelessWidget {
                   item.status == DownloadStatus.verifying
                       ? (item.phase ?? 'Processing')
                       : item.sizeBytes > 0
-                      ? '${formatBytes(item.downloadedBytes)} of ${formatBytes(item.sizeBytes)}'
+                      ? '${formatBytes(item.downloadedBytes)} / ${formatBytes(item.sizeBytes)}'
                       : '${formatBytes(item.downloadedBytes)} • ${sizeLabel(item)}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: AppType.numeric(palette.textMuted, size: 12),
                 ),
               ),
-              const SizedBox(width: 8),
               if (eta != null)
                 Text(
-                  '${formatEta(eta)} left',
+                  'ETA ${formatEta(eta)}',
                   style: AppType.numeric(palette.textSecondary, size: 12),
                 ),
             ],
           ),
-          const SizedBox(height: 26),
-          Text('STATISTICS', style: AppType.eyebrow(palette.textMuted)),
-          const SizedBox(height: 12),
-          _StatRow(
-            label: 'Status',
-            child: StatusChip(status: item.status, compact: true),
-          ),
-          _StatRow(
-            label: 'Downloaded',
-            value: '${formatBytes(item.downloadedBytes)} / ${sizeLabel(item)}',
-          ),
-          if (item.failureReason case final reason?)
-            _StatRow(label: 'Error', value: reason),
-          _StatRow(
-            label: 'Speed',
-            value: item.status == DownloadStatus.downloading
-                ? formatSpeed(item.speed)
-                : '—',
-          ),
-          _StatRow(label: 'ETA', value: eta == null ? '—' : formatEta(eta)),
-          if (item.isTorrent) ...[
-            _StatRow(label: 'Peers', value: '${item.connections}'),
-            _StatRow(label: 'Seeds', value: '${item.seeders}'),
-            _StatRow(label: 'Upload', value: formatSpeed(item.uploadSpeed)),
-          ] else if (item.isMedia)
-            _StatRow(label: 'Format', value: transferLabel(item))
-          else
-            _StatRow(label: 'Connections', value: '${item.connections}'),
-          _StatRow(label: 'Save location', value: item.savePath),
-          if (item.filePath case final path?)
-            _StatRow(label: 'File', value: path, ellipsis: true),
-          _StatRow(label: 'Source URL', value: item.url, ellipsis: true),
-          _StatRow(label: 'Added', value: formatDateTime(item.addedAt)),
-          const SizedBox(height: 22),
-          Text('TRANSFER RATE', style: AppType.eyebrow(palette.textMuted)),
-          const SizedBox(height: 12),
-          MiniSpeedGraph(state: state, height: 66),
-          const SizedBox(height: 6),
+          const _Divider(),
+          _Eyebrow('SPEED'),
           Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Expanded(
-                child: Text(
-                  'Peak ${formatSpeed(state.peakSpeed)}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppType.numeric(palette.textMuted, size: 11),
-                ),
+              Text(
+                moving ? formatSpeed(item.speed) : '—',
+                style: _figure(palette),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 16),
               Expanded(
-                child: Text(
-                  'Avg ${formatSpeed(state.averageSpeed)}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.right,
-                  style: AppType.numeric(palette.textMuted, size: 11),
+                child: SpeedBars(
+                  samples: state.speedHistoryFor(item.id),
+                  height: 30,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 26),
-          Text('ADVANCED', style: AppType.eyebrow(palette.textMuted)),
-          const SizedBox(height: 12),
-          _StatRow(
-            label: 'HTTP status',
-            value: item.httpStatus == 0
-                ? '—'
-                : '${item.httpStatus} ${_statusText(item.httpStatus)}',
-          ),
-          _StatRow(
-            label: 'Server',
-            value: item.server.isEmpty ? '—' : item.server,
-          ),
-          _StatRow(label: 'Content type', value: item.contentType),
-          _StatRow(
-            label: 'Resume support',
-            value: !item.resumeSupported
-                ? 'No'
-                : item.isTorrent
-                ? 'Yes — piece-verified'
-                : item.isMedia
-                ? 'Yes — continues partial streams'
-                : 'Yes — byte ranges',
-          ),
-          _StatRow(label: 'Created', value: formatDateTime(item.addedAt)),
-          _StatRow(
-            label: 'Last activity',
-            value: formatDateTime(item.lastActivity),
-          ),
+          if (item.isTorrent) ...[
+            const _Divider(),
+            _Eyebrow('SWARM'),
+            _StatRow(label: 'Peers', value: '${item.connections}'),
+            _StatRow(label: 'Seeds', value: '${item.seeders}'),
+            _StatRow(label: 'Upload', value: formatSpeed(item.uploadSpeed)),
+          ] else if (!item.isMedia) ...[
+            const _Divider(),
+            _Eyebrow('CONNECTIONS'),
+            Row(
+              children: [
+                Text(
+                  '${item.connections} / ${ConnectionGrid.slots}',
+                  style: _figure(palette),
+                ),
+                const Spacer(),
+                ConnectionGrid(connections: item.connections, live: moving),
+              ],
+            ),
+          ],
+          const _Divider(),
+          _Eyebrow('SAVE TO'),
+          _SaveTo(item: item, onAction: onAction),
+          const _Divider(),
+          _Eyebrow('ADDITIONAL INFO'),
+          _StatRow(label: 'File type', value: _fileType(item)),
+          _StatRow(label: 'Size', value: sizeLabel(item)),
+          _StatRow(label: 'Added', value: formatDateTime(item.addedAt)),
+          _StatRow(label: 'Status', value: _statusLabel(item.status)),
+          _StatRow(label: 'Source', value: item.source),
+          if (item.isMedia)
+            _StatRow(label: 'Format', value: transferLabel(item)),
+          if (item.failureReason case final reason?)
+            _StatRow(label: 'Error', value: reason, ellipsis: true),
           _StatRow(
             label: 'Priority',
-            child: MonoDropdown<DownloadPriority>(
-              value: item.priority,
-              options: [
-                for (final priority in DownloadPriority.values)
-                  MonoOption(priority, priority.label),
-              ],
-              onChanged: (priority) => state.setPriority(item.id, priority),
-              height: 28,
-              width: 116,
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: MonoDropdown<DownloadPriority>(
+                value: item.priority,
+                options: [
+                  for (final priority in DownloadPriority.values)
+                    MonoOption(priority, priority.label),
+                ],
+                onChanged: (priority) => state.setPriority(item.id, priority),
+                height: 28,
+                width: 116,
+              ),
             ),
           ),
-          const SizedBox(height: 26),
+          const SizedBox(height: 6),
+          _Advanced(
+            children: [
+              _StatRow(
+                label: 'HTTP status',
+                value: item.httpStatus == 0
+                    ? '—'
+                    : '${item.httpStatus} ${_statusText(item.httpStatus)}',
+              ),
+              _StatRow(
+                label: 'Server',
+                value: item.server.isEmpty ? '—' : item.server,
+              ),
+              _StatRow(label: 'Content type', value: item.contentType),
+              _StatRow(
+                label: 'Resume support',
+                value: !item.resumeSupported
+                    ? 'No'
+                    : item.isTorrent
+                    ? 'Yes — piece-verified'
+                    : item.isMedia
+                    ? 'Yes — continues partial streams'
+                    : 'Yes — byte ranges',
+              ),
+              if (item.filePath case final path?)
+                _StatRow(label: 'File', value: path, ellipsis: true),
+              _StatRow(label: 'Source URL', value: item.url, ellipsis: true),
+              _StatRow(
+                label: 'Last activity',
+                value: formatDateTime(item.lastActivity),
+              ),
+            ],
+          ),
+          const SizedBox(height: 22),
           ..._actions(context),
         ],
       ),
     );
+  }
+
+  static TextStyle _figure(ZonPalette palette) => TextStyle(
+    color: palette.textPrimary,
+    fontSize: 21,
+    fontWeight: FontWeight.w600,
+    letterSpacing: -0.4,
+    fontFeatures: AppType.tabular,
+    height: 1.1,
+  );
+
+  static String _statusLabel(DownloadStatus status) => switch (status) {
+    DownloadStatus.downloading => 'Downloading',
+    DownloadStatus.paused => 'Paused',
+    DownloadStatus.queued => 'Queued',
+    DownloadStatus.completed => 'Completed',
+    DownloadStatus.failed => 'Failed',
+    DownloadStatus.verifying => 'Processing',
+    DownloadStatus.cancelled => 'Cancelled',
+  };
+
+  /// "Disk Image", "Video", ... from the extension, else the MIME type.
+  static String _fileType(DownloadItem item) {
+    final name = item.fileName.toLowerCase();
+    final ext = name.contains('.') ? name.split('.').last : '';
+    return switch (ext) {
+      'dmg' || 'iso' || 'img' => 'Disk Image',
+      'pkg' || 'exe' || 'msi' || 'deb' || 'rpm' || 'appimage' => 'Installer',
+      'zip' || 'rar' || '7z' || 'tar' || 'gz' || 'xz' => 'Archive',
+      'mp4' || 'mkv' || 'mov' || 'avi' || 'webm' => 'Video',
+      'mp3' || 'm4a' || 'flac' || 'wav' || 'opus' || 'aac' => 'Audio',
+      'png' || 'jpg' || 'jpeg' || 'gif' || 'webp' || 'heic' => 'Image',
+      'pdf' => 'PDF Document',
+      'torrent' => 'Torrent',
+      _ when item.isTorrent => 'Torrent',
+      _ => item.contentType.isEmpty ? 'File' : item.contentType,
+    };
   }
 
   static String _statusText(int code) => switch (code) {
@@ -432,6 +429,341 @@ class _StatRow extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _Eyebrow extends StatelessWidget {
+  const _Eyebrow(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Text(text, style: AppType.eyebrow(context.palette.textMuted)),
+    );
+  }
+}
+
+class _Divider extends StatelessWidget {
+  const _Divider();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 18),
+      child: Container(height: 1, color: context.palette.border),
+    );
+  }
+}
+
+/// Open, folder, copy link and remove, plus close in the drawer.
+class _Toolbar extends StatelessWidget {
+  const _Toolbar({required this.item, required this.onAction, this.onClose});
+
+  final DownloadItem item;
+  final void Function(DownloadCardAction action, DownloadItem item) onAction;
+  final VoidCallback? onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget button(IconData icon, String tooltip, DownloadCardAction? action) {
+      return MonoIconButton(
+        icon: icon,
+        tooltip: tooltip,
+        size: 36,
+        raised: true,
+        onTap: action == null ? null : () => onAction(action, item),
+      );
+    }
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        button(
+          Icons.open_in_new_rounded,
+          'Open file',
+          item.status == DownloadStatus.completed
+              ? DownloadCardAction.openFile
+              : null,
+        ),
+        button(
+          Icons.folder_open_rounded,
+          'Show in folder',
+          DownloadCardAction.openFolder,
+        ),
+        button(Icons.link_rounded, 'Copy link', DownloadCardAction.copyUrl),
+        button(
+          Icons.delete_outline_rounded,
+          'Remove',
+          DownloadCardAction.remove,
+        ),
+        if (onClose != null)
+          MonoIconButton(
+            icon: Icons.close_rounded,
+            tooltip: 'Close',
+            size: 36,
+            onTap: onClose,
+          ),
+      ],
+    );
+  }
+}
+
+/// Bar chart of one download's recent speed, newest on the right.
+class SpeedBars extends StatelessWidget {
+  const SpeedBars({super.key, required this.samples, required this.height});
+
+  final List<double> samples;
+  final double height;
+
+  static const int bars = 24;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: height,
+      child: CustomPaint(
+        size: Size(double.infinity, height),
+        painter: SpeedBarsPainter(
+          samples: samples.length > bars
+              ? samples.sublist(samples.length - bars)
+              : samples,
+          glow: context.palette.glow,
+          idle: context.palette.track,
+        ),
+      ),
+    );
+  }
+}
+
+class SpeedBarsPainter extends CustomPainter {
+  SpeedBarsPainter({
+    required this.samples,
+    required this.glow,
+    required this.idle,
+  });
+
+  final List<double> samples;
+  final Color glow;
+  final Color idle;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const count = SpeedBars.bars;
+    final slot = size.width / count;
+    final width = (slot * 0.45).clamp(1.5, 3.0);
+    final peak = samples.fold<double>(1024, (a, b) => b > a ? b : a);
+    // Right-align the samples we have; empty slots show as stubs.
+    final offset = count - samples.length;
+    for (var i = 0; i < count; i++) {
+      final value = i >= offset ? samples[i - offset] : 0.0;
+      final fraction = value / peak;
+      final bar = (size.height * fraction).clamp(2.0, size.height);
+      final x = size.width - (count - i) * slot + (slot - width) / 2;
+      final age = i / (count - 1);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(x, size.height - bar, width, bar),
+          const Radius.circular(1),
+        ),
+        Paint()
+          ..color = value > 0
+              ? glow.withValues(alpha: 0.35 + 0.65 * age)
+              : idle,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(SpeedBarsPainter oldDelegate) =>
+      oldDelegate.samples != samples ||
+      oldDelegate.glow != glow ||
+      oldDelegate.idle != idle;
+}
+
+/// [slots] cells in two rows; the first [connections] light up while the
+/// download is moving.
+class ConnectionGrid extends StatelessWidget {
+  const ConnectionGrid({
+    super.key,
+    required this.connections,
+    required this.live,
+    this.cell = const Size(6, 11),
+  });
+
+  final int connections;
+  final bool live;
+
+  /// Size of one connection cell.
+  final Size cell;
+
+  /// Most connections one download may use (see the add dialog).
+  static const int slots = 32;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    const perRow = slots ~/ 2;
+
+    Widget box(int index) {
+      final lit = live && index < connections;
+      final used = index < connections;
+      return Container(
+        width: cell.width,
+        height: cell.height,
+        margin: const EdgeInsets.only(left: 3),
+        decoration: BoxDecoration(
+          color: lit ? palette.glow : Colors.transparent,
+          borderRadius: BorderRadius.circular(1.5),
+          border: Border.all(
+            color: lit
+                ? palette.glow
+                : used
+                ? palette.textMuted
+                : palette.borderStrong,
+          ),
+          boxShadow: lit
+              ? [
+                  BoxShadow(
+                    color: palette.glow.withValues(alpha: 0.45),
+                    blurRadius: 4,
+                  ),
+                ]
+              : null,
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [for (var i = 0; i < perRow; i++) box(i)],
+        ),
+        const SizedBox(height: 4),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [for (var i = perRow; i < slots; i++) box(i)],
+        ),
+      ],
+    );
+  }
+}
+
+/// Folder field; tapping it reveals the folder.
+class _SaveTo extends StatelessWidget {
+  const _SaveTo({required this.item, required this.onAction});
+
+  final DownloadItem item;
+  final void Function(DownloadCardAction action, DownloadItem item) onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: () => onAction(DownloadCardAction.openFolder, item),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: palette.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: palette.border),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                Icons.folder_outlined,
+                size: 17,
+                color: palette.textSecondary,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  item.savePath,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppType.body(palette.textPrimary, size: 12.5),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Tooltip(
+                message: 'Show in folder',
+                child: Icon(
+                  Icons.arrow_outward_rounded,
+                  size: 15,
+                  color: palette.textMuted,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Collapsed-by-default technical metadata.
+class _Advanced extends StatefulWidget {
+  const _Advanced({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  State<_Advanced> createState() => _AdvancedState();
+}
+
+class _AdvancedState extends State<_Advanced> {
+  bool _open = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => setState(() => _open = !_open),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Row(
+                children: [
+                  Text('ADVANCED', style: AppType.eyebrow(palette.textMuted)),
+                  const Spacer(),
+                  AnimatedRotation(
+                    turns: _open ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 180),
+                    child: Icon(
+                      Icons.expand_more_rounded,
+                      size: 18,
+                      color: palette.textMuted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        AnimatedSize(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.topCenter,
+          child: _open
+              ? Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Column(children: widget.children),
+                )
+              : const SizedBox(width: double.infinity),
+        ),
+      ],
     );
   }
 }

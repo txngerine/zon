@@ -12,6 +12,7 @@ import '../../core/utils/responsive.dart';
 import '../../core/widgets/empty_state.dart';
 import '../../core/widgets/mono_button.dart';
 import '../../core/widgets/progress_bar.dart';
+import '../../core/widgets/space_background.dart';
 import '../../core/widgets/zon_logo.dart';
 import '../../data/app_state.dart';
 import '../../domain/models/download.dart';
@@ -363,6 +364,8 @@ class _ZonShellState extends State<ZonShell> with WidgetsBindingObserver {
                 body: _dropZone(
                   Stack(
                     children: [
+                      if (layout != ZonLayout.mobile)
+                        const Positioned.fill(child: SpaceBackground()),
                       body,
                       if (_dragging) const _DropHint(),
                       if (_clipboardOffer case final link?)
@@ -398,26 +401,32 @@ class _ZonShellState extends State<ZonShell> with WidgetsBindingObserver {
     );
   }
 
+  /// Floating panels over the space background, with [_panelGap] around and
+  /// between them.
   Widget _desktopLayout(ZonLayout layout, ZonPalette palette) {
-    final content = Column(
-      children: [
-        Expanded(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Sidebar(
-                state: state,
-                collapsed: layout == ZonLayout.compact,
-                onAddDownload: () => _openAddDialog(AddDownloadMode.single),
-              ),
-              Expanded(child: _mainContent(palette)),
-              if (layout == ZonLayout.desktop)
-                DetailsPanel(state: state, onAction: _handleCardAction),
-            ],
+    final content = Padding(
+      padding: const EdgeInsets.all(_panelGap),
+      child: Column(
+        children: [
+          Expanded(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Sidebar(
+                  state: state,
+                  collapsed: layout == ZonLayout.compact,
+                  onAddDownload: () => _openAddDialog(AddDownloadMode.single),
+                ),
+                Expanded(child: _mainContent(palette)),
+                if (layout == ZonLayout.desktop)
+                  DetailsPanel(state: state, onAction: _handleCardAction),
+              ],
+            ),
           ),
-        ),
-        StatusBar(state: state),
-      ],
+          const SizedBox(height: _panelGap),
+          StatusBar(state: state),
+        ],
+      ),
     );
     if (layout != ZonLayout.compact) return content;
     return Stack(
@@ -428,21 +437,21 @@ class _ZonShellState extends State<ZonShell> with WidgetsBindingObserver {
     );
   }
 
+  static const double _panelGap = 14;
+
+  /// Sits straight on the space background, between the floating panels.
   Widget _mainContent(ZonPalette palette) {
-    return ColoredBox(
-      color: palette.background,
-      child: switch (state.section) {
-        AppSection.history => HistoryScreen(state: state),
-        AppSection.settings => SettingsScreen(state: state),
-        _ => DashboardScreen(
-          state: state,
-          onAddDownload: (mode, url) => _openAddDialog(mode, url),
-          onQuickAction: _handleQuickAction,
-          onCardTap: _handleCardTap,
-          onCardAction: _handleCardAction,
-        ),
-      },
-    );
+    return switch (state.section) {
+      AppSection.history => HistoryScreen(state: state),
+      AppSection.settings => SettingsScreen(state: state),
+      _ => DashboardScreen(
+        state: state,
+        onAddDownload: (mode, url) => _openAddDialog(mode, url),
+        onQuickAction: _handleQuickAction,
+        onCardTap: _handleCardTap,
+        onCardAction: _handleCardAction,
+      ),
+    };
   }
 
   Widget _detailsDrawer(ZonPalette palette) {

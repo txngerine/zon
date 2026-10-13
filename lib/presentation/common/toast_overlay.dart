@@ -42,6 +42,9 @@ class ToastOverlayState extends State<ToastOverlay> {
     final toast = widget.state.toast;
     if (toast == null) {
       _timer?.cancel();
+      // Nothing above this widget rebuilds on state changes, so hiding the
+      // toast is up to us.
+      setState(() {});
       return;
     }
     if (widget.state.toastToken == _shownToken) return;

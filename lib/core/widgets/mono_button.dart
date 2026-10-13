@@ -132,6 +132,8 @@ class MonoIconButton extends StatefulWidget {
     this.iconSize = 17,
     this.filled = false,
     this.danger = false,
+    this.round = false,
+    this.raised = false,
   });
 
   final IconData icon;
@@ -141,6 +143,12 @@ class MonoIconButton extends StatefulWidget {
   final double iconSize;
   final bool filled;
   final bool danger;
+
+  /// Circle instead of a rounded square.
+  final bool round;
+
+  /// Keeps a soft fill when not hovered, for the primary action of a row.
+  final bool raised;
 
   @override
   State<MonoIconButton> createState() => _MonoIconButtonState();
@@ -156,10 +164,12 @@ class _MonoIconButtonState extends State<MonoIconButton> {
         ? palette.accent
         : _hovered
         ? palette.surfaceHighest
+        : widget.raised
+        ? palette.surfaceHigh
         : Colors.transparent;
     final foreground = widget.filled
         ? palette.onAccent
-        : _hovered
+        : _hovered || widget.raised
         ? palette.textPrimary
         : palette.textSecondary;
 
@@ -169,11 +179,15 @@ class _MonoIconButtonState extends State<MonoIconButton> {
       height: widget.size,
       decoration: BoxDecoration(
         color: background,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(widget.round ? widget.size : 10),
         border: widget.filled
             ? null
             : Border.all(
-                color: _hovered ? palette.borderStrong : Colors.transparent,
+                color: _hovered
+                    ? palette.borderStrong
+                    : widget.raised
+                    ? palette.border
+                    : Colors.transparent,
               ),
       ),
       child: Icon(widget.icon, size: widget.iconSize, color: foreground),

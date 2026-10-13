@@ -5,6 +5,8 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import 'pinterest.dart';
+
 /// Metadata yt-dlp reports for a link before downloading.
 class MediaInfo {
   const MediaInfo({
@@ -137,6 +139,7 @@ class MediaTools {
   String? _ytDlp;
   String? _ffmpeg;
   String? _aria2;
+  String? _pinterestDl;
   String? _version;
   bool _resolved = false;
 
@@ -146,6 +149,21 @@ class MediaTools {
   /// aria2c, used for BitTorrent.
   String? get aria2Path => _aria2;
   bool get hasAria2 => _aria2 != null;
+
+  /// pinterest-dl, used to resolve Pinterest pins and boards.
+  String? get pinterestDlPath => _pinterestDl;
+  bool get hasPinterestDl => _pinterestDl != null;
+
+  /// True when pinterest-dl lives in ZON's own venv, so ZON may update it.
+  bool get isPinterestDlManaged =>
+      _pinterestDl != null && _pinterestDl!.startsWith(_pinterestVenv);
+
+  String get _pinterestVenv =>
+      '$binDir${Platform.pathSeparator}pinterest-dl-env';
+
+  String get _venvBin => Platform.isWindows
+      ? '$_pinterestVenv${Platform.pathSeparator}Scripts'
+      : '$_pinterestVenv${Platform.pathSeparator}bin';
   String? get version => _version;
   bool get hasYtDlp => _ytDlp != null;
   bool get hasFfmpeg => _ffmpeg != null;
@@ -200,6 +218,8 @@ class MediaTools {
         : _find('yt-dlp');
     _ffmpeg = _find('ffmpeg');
     _aria2 = _find('aria2c');
+    final managed = File('$_venvBin${Platform.pathSeparator}pinterest-dl$_exe');
+    _pinterestDl = managed.existsSync() ? managed.path : _find('pinterest-dl');
     _version = null;
     if (_ytDlp != null) {
       try {
@@ -418,6 +438,181 @@ class MediaTools {
       onProgress?.call(received / total);
     }
     return pending.length;
+  }
+
+  /// Installs (or upgrades) pinterest-dl into a private virtualenv in
+  /// [binDir]. Needs Python 3.10+, or uv, which fetches its own Python.
+  Future<void> installPinterestDl({
+    void Function(String stage)? onStage,
+  }) async {
+    final venv = _pinterestVenv;
+    final python = '$_venvBin${Platform.pathSeparator}python$_exe';
+    await Directory(binDir).create(recursive: true);
+
+    Future<void> run(String exe, List<String> args) async {
+      final result = await Process.run(
+        exe,
+        args,
+        environment: utf8Environment,
+      ).timeout(const Duration(minutes: 5));
+      if (result.exitCode != 0) {
+        throw MediaToolException(
+          _lastError('${result.stderr}${result.stdout}'),
+        );
+      }
+    }
+
+    try {
+      final uv = _find('uv');
+      if (!File(python).existsSync()) {
+        onStage?.call('Creating Python environment');
+        final system = await _python310();
+        if (system != null) {
+          await run(system, ['-m', 'venv', venv]);
+        } else if (uv != null) {
+          await run(uv, ['venv', '--python', '3.12', venv]);
+        } else {
+          throw MediaToolException(
+            'pinterest-dl needs Python 3.10 or newer. Install it '
+            '(${Platform.isMacOS
+                ? 'brew install python'
+                : Platform.isWindows
+                ? 'winget install Python.Python.3.12'
+                : 'sudo apt install python3 python3-venv'}) '
+            'and try again.',
+          );
+        }
+      }
+      onStage?.call('Installing pinterest-dl');
+      if (File(python).existsSync() &&
+          (await Process.run(python, ['-m', 'pip', '--version'])).exitCode ==
+              0) {
+        await run(python, [
+          '-m', 'pip', 'install', '--upgrade', '--disable-pip-version-check', //
+          'pinterest-dl>=1.3',
+        ]);
+      } else if (uv != null) {
+        // uv-made environments have no pip of their own.
+        await run(uv, [
+          'pip', 'install', '--upgrade', '--python', python, //
+          'pinterest-dl>=1.3',
+        ]);
+      } else {
+        throw const MediaToolException('The Python environment has no pip');
+      }
+    } on ProcessException catch (error) {
+      throw MediaToolException('Could not run Python: ${error.message}');
+    } on TimeoutException {
+      throw const MediaToolException('Installing pinterest-dl timed out');
+    }
+    await resolve();
+    if (!hasPinterestDl) {
+      throw const MediaToolException(
+        'pinterest-dl was installed but not found',
+      );
+    }
+  }
+
+  /// A Python interpreter new enough for pinterest-dl, if any.
+  Future<String?> _python310() async {
+    final names = Platform.isWindows
+        ? ['python', 'py']
+        : ['python3.13', 'python3.12', 'python3.11', 'python3.10', 'python3'];
+    for (final dir in _searchDirs) {
+      for (final name in names) {
+        final candidate = '$dir${Platform.pathSeparator}$name$_exe';
+        if (!File(candidate).existsSync()) continue;
+        try {
+          final result = await Process.run(candidate, [
+            '-c',
+            'import sys; print(sys.version_info >= (3, 10))',
+          ]).timeout(const Duration(seconds: 20));
+          if ('${result.stdout}'.trim() == 'True') return candidate;
+        } catch (_) {}
+      }
+    }
+    return null;
+  }
+
+  /// Pins behind a Pinterest pin, board or section link, via
+  /// `pinterest-dl scrape --json` (metadata only; ZON downloads the files).
+  Future<List<PinterestPin>> resolvePinterest(
+    String url, {
+    int boardLimit = 100,
+  }) async {
+    final path = _pinterestDl;
+    if (path == null) {
+      throw const MediaToolException('pinterest-dl is not installed');
+    }
+    var target = url.trim();
+    if (isPinterestShortLink(target)) target = await _expandShortLink(target);
+    final result = await Process.run(
+      path,
+      [
+        'scrape',
+        target,
+        '--json',
+        '--client', 'api', //
+        '-n', isPinterestPin(target) ? '1' : '$boardLimit',
+      ],
+      stdoutEncoding: utf8,
+      stderrEncoding: utf8,
+      environment: utf8Environment,
+    ).timeout(const Duration(seconds: 90));
+    final pins = PinterestPin.parseScrape('${result.stdout}');
+    if (pins.isEmpty) {
+      final error = '${result.stderr}'.trim();
+      throw MediaToolException(
+        error.isEmpty
+            ? 'pinterest-dl found nothing at this link'
+            : _pinterestError(error),
+      );
+    }
+    return pins;
+  }
+
+  static String _pinterestError(String stderr) {
+    final start = stderr.lastIndexOf('{"error"');
+    if (start >= 0) {
+      try {
+        final json = jsonDecode(stderr.substring(start)) as Map;
+        return '${json['error']}';
+      } catch (_) {}
+    }
+    return _lastError(stderr);
+  }
+
+  /// Follows a `pin.it` short link to the pin or board it points at.
+  static Future<String> _expandShortLink(String url) async {
+    final client = HttpClient()
+      ..userAgent = 'Mozilla/5.0'
+      ..connectionTimeout = const Duration(seconds: 10);
+    try {
+      var current = Uri.parse(url);
+      for (var hop = 0; hop < 5; hop++) {
+        final request = await client.getUrl(current)
+          ..followRedirects = false;
+        final response = await request.close();
+        await response.drain<void>();
+        final location = response.headers.value(HttpHeaders.locationHeader);
+        if (!response.isRedirect || location == null) break;
+        current = current.resolve(location);
+        if (!isPinterestShortLink(current.toString()) &&
+            !current.path.contains('url_shortener')) {
+          break;
+        }
+      }
+      // Drop tracking parameters; pinterest-dl only needs the path.
+      return Uri(
+        scheme: current.scheme,
+        host: current.host,
+        path: current.path,
+      ).toString();
+    } catch (_) {
+      return url;
+    } finally {
+      client.close(force: true);
+    }
   }
 
   /// Updates a ZON-managed yt-dlp in place. Returns the new version.

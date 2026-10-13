@@ -5,11 +5,13 @@ import 'dart:math';
 
 import '../domain/models/media_format.dart';
 
-/// Tiny loopback HTTP server for the browser bookmarklet and for handing
+/// Tiny loopback HTTP server for the browser extension
+/// (`assets/browser_extension`), the bookmarklet, and for handing
 /// links from a second ZON process (magnet handler) to the running one.
 ///
 /// `GET /add?t=<token>&url=<link>[&format=audioMp3]` adds a download and
 /// returns a page that closes itself. `path=<file>` adds a local `.torrent`.
+/// `GET /hello?t=<token>` only checks the token.
 ///
 /// Only 127.0.0.1 is bound, but any web page can still make the browser
 /// request a loopback URL, so every request must carry the per-install
@@ -35,6 +37,9 @@ class LocalApiServer {
 
   bool get running => _server != null;
 
+  /// Why the last [start] failed, for the setup dialog; null when fine.
+  String? problem;
+
   /// A fresh random secret for [token].
   static String newToken() {
     final random = Random.secure();
@@ -44,15 +49,48 @@ class LocalApiServer {
     ).join();
   }
 
-  Future<bool> start() async {
+  Future<bool>? _starting;
+
+  /// Binds the port. Concurrent calls share one attempt.
+  Future<bool> start() => _starting ??= _bind().whenComplete(() {
+    _starting = null;
+  });
+
+  Future<bool> _bind() async {
     if (_server != null) return true;
     try {
       final server = await HttpServer.bind(InternetAddress.loopbackIPv4, port);
       _server = server;
+      problem = null;
       server.listen(_handle, onError: (_) {});
       return true;
     } on SocketException {
+      problem = await isZonListening(port: port)
+          ? 'Another copy of ZON is already receiving browser links. '
+                'Quit it, then reopen this one.'
+          : 'Port $port is taken by another app, so the browser extension '
+                'cannot reach ZON.';
       return false;
+    }
+  }
+
+  /// Whether a ZON (this build or another) answers on [port].
+  static Future<bool> isZonListening({int port = defaultPort}) async {
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(milliseconds: 800);
+    try {
+      final request = await client.getUrl(
+        Uri(scheme: 'http', host: '127.0.0.1', port: port, path: '/ping'),
+      );
+      final response = await request.close().timeout(
+        const Duration(seconds: 2),
+      );
+      final body = await response.transform(utf8.decoder).join();
+      return body == 'ZON';
+    } catch (_) {
+      return false;
+    } finally {
+      client.close(force: true);
     }
   }
 
@@ -65,12 +103,25 @@ class LocalApiServer {
   Future<void> _handle(HttpRequest request) async {
     final response = request.response;
     final query = request.uri.queryParameters;
+    // Extension pages (not websites) may read our answers. Firefox treats
+    // the extension's host access as optional; without this, a send that
+    // ZON accepted would still look like a failure to the extension.
+    final origin = request.headers.value('origin') ?? '';
+    if (_extensionOrigin.hasMatch(origin)) {
+      response.headers
+        ..set('access-control-allow-origin', origin)
+        ..set('vary', 'origin');
+    }
     try {
+      if (request.method == 'OPTIONS') {
+        response.statusCode = HttpStatus.noContent;
+        return;
+      }
       if (request.uri.path == '/ping') {
         response.write('ZON');
         return;
       }
-      if (request.uri.path != '/add') {
+      if (request.uri.path != '/add' && request.uri.path != '/hello') {
         response.statusCode = HttpStatus.notFound;
         return;
       }
@@ -78,7 +129,12 @@ class LocalApiServer {
       if (expected.isEmpty ||
           !_constantTimeEquals(query['t'] ?? '', expected)) {
         response.statusCode = HttpStatus.forbidden;
-        response.write('Forbidden — copy a fresh bookmarklet from ZON.');
+        response.write('Forbidden — copy a fresh key from ZON.');
+        return;
+      }
+      if (request.uri.path == '/hello') {
+        // Lets the extension check its pairing key without adding anything.
+        response.write('ZON');
         return;
       }
 
@@ -113,6 +169,10 @@ class LocalApiServer {
       await response.close();
     }
   }
+
+  static final _extensionOrigin = RegExp(
+    r'^(chrome-extension|moz-extension|safari-web-extension)://[\w.-]+$',
+  );
 
   static bool _constantTimeEquals(String a, String b) {
     if (a.length != b.length) return false;

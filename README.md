@@ -9,6 +9,11 @@ A cross-platform (macOS, Windows, Linux) download manager built with Flutter.
 - **Segmented HTTP engine** — splits files into up to 32 parallel byte ranges,
   resumes after pause, quit or crash, retries with backoff, and backs off
   automatically when a server answers `429 Too Many Requests`.
+- **Combined networks** — optionally spreads those connections over every
+  uplink at once (Wi-Fi, Ethernet, a tethered phone) so their bandwidth adds
+  up; an interface that stops working is dropped mid-download
+  (**Settings › Network**). Bound connections bypass VPNs. On Linux this needs
+  source-based routing for each interface.
 - **Video & audio** — YouTube (videos, Shorts, playlists, channels), Instagram
   Reels, TikTok, X, Facebook, Vimeo, SoundCloud, Twitch, Reddit and 1000+ more
   sites via [yt-dlp](https://github.com/yt-dlp/yt-dlp). Pick Best / 4K /
@@ -24,7 +29,7 @@ A cross-platform (macOS, Windows, Linux) download manager built with Flutter.
   launch.
 - **Desktop integration** — tray icon with pause/resume, native notifications,
   launch at login, a "copied link" banner, drag & drop of links and
-  `.txt`/`.webloc`/`.url` files, and a browser bookmarklet.
+  `.txt`/`.webloc`/`.url` files, and a browser extension.
 - Speed limits (global and per download), priorities, queue reordering.
 
 ## Requirements
@@ -42,12 +47,32 @@ pre-merged streams and MP3 is disabled.
 
 Linux builds need `libgtk-3-dev libx11-dev libxi-dev` (tray icon).
 
-## Browser button
+## Browser extension
 
-**Settings › Integrations › Bookmarklet › Set up** copies a bookmarklet. Clicking it
-on any page sends that page to ZON through a server bound to `127.0.0.1:6412`
-only. A second bookmarklet sends straight to MP3. Each install has its own
-secret key inside the bookmarklet, so other websites cannot add downloads.
+**Sidebar › Browser Button** (or **Settings › Integrations › Browser extension › Set up**):
+
+1. **Show extension folder** unpacks the bundled extension (`assets/browser_extension/`)
+   into the app-support folder. Chrome / Edge / Brave: `chrome://extensions` →
+   Developer mode → **Load unpacked**. Firefox: `about:debugging` → This Firefox →
+   **Load Temporary Add-on** → `manifest.json`.
+2. **Copy key** and paste it into the extension's settings.
+
+Then click the toolbar button to send the current page, or right-click a link,
+video or page → **Download with ZON** (or **as MP3**). An opt-in setting hands
+browser downloads to ZON (the browser copy is cancelled only after ZON accepts it).
+
+Everything goes to a server bound to `127.0.0.1:6412` only, and each install has
+its own secret key, so other websites cannot add downloads. The dialog also still
+offers bookmarklets for browsers without the extension.
+
+## Pinterest
+
+Single video pins work through yt-dlp. For boards, sections, image pins and
+`pin.it` short links, install **pinterest-dl** under **Settings › Media**. ZON
+puts it in a private Python environment in its app-support `bin/` folder, using
+Python 3.10+ or `uv`. ZON uses it only to read the pins; the files then download
+through ZON's own engines: HLS video through yt-dlp, plain MP4 and images
+directly. A board adds up to 100 pins. Some video pins have no audio track.
 
 ## Instagram, private and age-restricted videos
 
