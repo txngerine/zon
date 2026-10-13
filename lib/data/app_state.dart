@@ -17,6 +17,7 @@ import '../engine/media/media_engine.dart';
 import '../engine/media/media_sites.dart';
 import '../engine/media/pinterest.dart';
 import '../engine/media/ytdlp.dart';
+import '../engine/page_image.dart';
 import '../engine/torrent/torrent_engine.dart';
 import '../platform/local_api.dart';
 import '../platform/desktop_bridge.dart';
@@ -61,6 +62,7 @@ class AppState extends ChangeNotifier implements TransferListener {
     TransferEngine? mediaEngine,
     TransferEngine? torrentEngine,
     MediaTools? mediaTools,
+    PageImageFinder? pageImageFinder,
     this._store,
     this._desktop = const DesktopBridge.noop(),
     List<DownloadItem>? downloads,
@@ -72,7 +74,8 @@ class AppState extends ChangeNotifier implements TransferListener {
   }) : _http = httpEngine ?? IdleEngine(),
        _media = mediaEngine ?? IdleEngine(),
        _torrent = torrentEngine ?? IdleEngine(),
-       _tools = mediaTools {
+       _tools = mediaTools,
+       _findImage = pageImageFinder {
     _http.listener = this;
     _media.listener = this;
     _torrent.listener = this;
@@ -89,6 +92,7 @@ class AppState extends ChangeNotifier implements TransferListener {
     _samples = List<double>.filled(sampleWindow, 0);
     _totalSpeed = 0;
     _selectedId = _downloads.isEmpty ? null : _downloads.first.id;
+    _lookUpImage(_selectedId);
   }
 
   /// Builds the production state: real engines, the on-disk library and
@@ -142,6 +146,7 @@ class AppState extends ChangeNotifier implements TransferListener {
         stateDir: '${support.path}${sep}torrent',
       ),
       mediaTools: tools,
+      pageImageFinder: findPageImage,
       store: store,
       desktop: SystemBridge(),
       downloads: restored,
@@ -239,6 +244,12 @@ class AppState extends ChangeNotifier implements TransferListener {
   double _elapsedCarry = 0;
   bool _toolsPending = false;
   bool _disposed = false;
+
+  /// Finds artwork for plain file downloads; null disables lookups.
+  final PageImageFinder? _findImage;
+
+  /// Downloads whose artwork was already looked up this session.
+  final Set<String> _imageLookups = {};
 
   late AppSettings _settings;
   AppSection _section = AppSection.all;
@@ -464,7 +475,32 @@ class AppState extends ChangeNotifier implements TransferListener {
   void select(String? id) {
     if (_selectedId == id) return;
     _selectedId = id;
+    _lookUpImage(id);
     notifyListeners();
+  }
+
+  /// Fills in [DownloadItem.thumbnailUrl] for a plain file download from
+  /// the file itself or its website, once per session.
+  void _lookUpImage(String? id) {
+    final find = _findImage;
+    final item = id == null ? null : _find(id);
+    if (find == null ||
+        item == null ||
+        item.isMedia ||
+        item.isTorrent ||
+        item.thumbnailUrl != null ||
+        !_imageLookups.add(item.id)) {
+      return;
+    }
+    unawaited(
+      find(item.url, userAgent: _settings.userAgent, proxy: _settings.proxy)
+          .then((image) {
+            if (_disposed || image == null) return;
+            _update(item.id, (item) => item.copyWith(thumbnailUrl: image));
+            _scheduleSave();
+          })
+          .catchError((_) {}),
+    );
   }
 
   void clearSelection() {
@@ -570,6 +606,7 @@ class AppState extends ChangeNotifier implements TransferListener {
     _downloads = [item, ..._downloads];
     _queueOrder = [..._queueOrder, item.id];
     _selectedId = item.id;
+    _lookUpImage(item.id);
     if (canStart) _start(item.id);
     _changed();
     if (notify) {
