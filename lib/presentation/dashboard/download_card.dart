@@ -9,6 +9,7 @@ import '../../core/widgets/progress_bar.dart';
 import '../../core/widgets/status_chip.dart';
 import '../../core/widgets/zon_card.dart';
 import '../../domain/models/download.dart';
+import '../common/artwork_preview.dart';
 
 /// Intent emitted by the card's action buttons and overflow menu.
 enum DownloadCardAction {
@@ -298,6 +299,98 @@ class _DownloadCardState extends State<DownloadCard> {
       DownloadStatus.cancelled => 'Cancelled',
       _ => '${sizeLabel(item)}  •  ${item.source}  •  ${transferLabel(item)}',
     };
+  }
+}
+
+// -----------------------------------------------------------------------------
+
+/// Grid tile: artwork on top, then name, progress and the same status and
+/// actions as the list card.
+class DownloadGridTile extends StatelessWidget {
+  const DownloadGridTile({
+    super.key,
+    required this.item,
+    required this.selected,
+    required this.onTap,
+    required this.onAction,
+  });
+
+  final DownloadItem item;
+  final bool selected;
+  final VoidCallback onTap;
+  final void Function(DownloadCardAction action, DownloadItem item) onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final live = item.status == DownloadStatus.downloading;
+    final stalled = switch (item.status) {
+      DownloadStatus.paused ||
+      DownloadStatus.queued ||
+      DownloadStatus.failed ||
+      DownloadStatus.cancelled => true,
+      _ => false,
+    };
+
+    return ZonCard(
+      selected: selected,
+      onTap: onTap,
+      padding: const EdgeInsets.all(10),
+      backgroundColor: live
+          ? Color.alphaBlend(
+              palette.glow.withValues(alpha: selected ? 0.10 : 0.05),
+              palette.surface,
+            )
+          : null,
+      borderColor: live
+          ? palette.glow.withValues(alpha: selected ? 0.55 : 0.22)
+          : null,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ArtworkPreview(item: item, radius: 10, iconSize: 40),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 12, 4, 2),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item.fileName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppType.body(
+                    palette.textPrimary,
+                    size: 13.5,
+                    weight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${item.source}  •  ${sizeLabel(item)}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppType.numeric(palette.textMuted, size: 11.5),
+                ),
+                const SizedBox(height: 10),
+                ZonProgressBar(
+                  value: item.progress,
+                  active: live,
+                  muted: stalled,
+                  height: 4,
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(child: _StatusColumn(item: item)),
+                    _Actions(item: item, compact: true, onAction: onAction),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

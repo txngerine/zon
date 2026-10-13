@@ -115,8 +115,11 @@ class BrowserIntegrationDialog extends StatelessWidget {
                 '1',
                 'Show the extension folder. Chrome, Edge or Brave: open '
                     'chrome://extensions, turn on Developer mode, click Load '
-                    'unpacked and pick that folder. Firefox: about:debugging › '
-                    'This Firefox › Load Temporary Add-on › manifest.json.',
+                    'unpacked and pick that folder (or drag the folder onto '
+                    'the page). After a ZON update, click the extension\'s '
+                    'reload button there. Firefox: about:debugging › This '
+                    'Firefox › Load Temporary Add-on › manifest.json — Firefox '
+                    'removes temporary add-ons when it quits.',
               ),
               step(
                 '2',
@@ -128,6 +131,14 @@ class BrowserIntegrationDialog extends StatelessWidget {
                 'Click the ZON toolbar button to send the page, or right-click '
                     'any link or video › Download with ZON.',
               ),
+              if (enabled)
+                ListenableBuilder(
+                  listenable: state,
+                  builder: (context, _) => _ServerStatus(
+                    ready: state.browserLinkReady,
+                    problem: state.browserLinkProblem,
+                  ),
+                ),
               if (!enabled)
                 Padding(
                   padding: const EdgeInsets.only(top: 4, bottom: 6),
@@ -192,6 +203,56 @@ class BrowserIntegrationDialog extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Whether ZON is listening for the extension right now.
+class _ServerStatus extends StatelessWidget {
+  const _ServerStatus({required this.ready, this.problem});
+
+  final bool ready;
+  final String? problem;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final text = ready
+        ? 'ZON is listening for the extension on 127.0.0.1:${LocalApiServer.defaultPort}.'
+        : problem ?? 'Starting the browser link…';
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Container(
+              width: 7,
+              height: 7,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: ready
+                    ? palette.glow
+                    : problem == null
+                    ? palette.textMuted
+                    : const Color(0xFFE5484D),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              style: AppType.body(
+                ready ? palette.textSecondary : palette.textPrimary,
+                size: 12,
+                weight: ready ? FontWeight.w400 : FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

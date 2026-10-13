@@ -10,15 +10,22 @@ const MENUS = [
   { id: 'page-mp3', title: 'Send page to ZON as MP3', contexts: ['page'] },
 ];
 
+// onInstalled and onStartup can both fire at launch; chain the rebuilds so
+// two of them never interleave into "duplicate id" errors.
+let menusReady = Promise.resolve();
 function setupMenus() {
-  chrome.contextMenus.removeAll(() => {
-    for (const menu of MENUS) chrome.contextMenus.create(menu);
-  });
+  menusReady = menusReady.then(async () => {
+    await chrome.contextMenus.removeAll();
+    for (const menu of MENUS) {
+      chrome.contextMenus.create(menu, () => void chrome.runtime.lastError);
+    }
+  }).catch(() => {});
+  return menusReady;
 }
 
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   setupMenus();
-  if (reason === 'install') chrome.runtime.openOptionsPage();
+  if (reason === 'install') quietly(chrome.runtime.openOptionsPage());
 });
 chrome.runtime.onStartup.addListener(setupMenus);
 
@@ -47,17 +54,30 @@ const MESSAGES = {
   error: 'ZON could not add this link',
 };
 
+// The tab may close or navigate before these land; that is fine.
+const quietly = (promise) => Promise.resolve(promise).catch(() => {});
+
 async function report(status, tabId) {
   const ok = status === 'ok';
   const target = tabId == null ? {} : { tabId };
-  await chrome.action.setBadgeBackgroundColor({ ...target, color: ok ? '#16a34a' : '#dc2626' });
-  await chrome.action.setBadgeText({ ...target, text: ok ? '✓' : '!' });
-  await chrome.action.setTitle({ ...target, title: MESSAGES[status] });
+  await quietly(chrome.action.setBadgeBackgroundColor({ ...target, color: ok ? '#16a34a' : '#dc2626' }));
+  await quietly(chrome.action.setBadgeText({ ...target, text: ok ? '✓' : '!' }));
+  await quietly(chrome.action.setTitle({ ...target, title: MESSAGES[status] }));
   setTimeout(() => {
-    chrome.action.setBadgeText({ ...target, text: '' });
-    chrome.action.setTitle({ ...target, title: 'Send this page to ZON' });
+    quietly(chrome.action.setBadgeText({ ...target, text: '' }));
+    quietly(chrome.action.setTitle({ ...target, title: 'Send this page to ZON' }));
   }, 2500);
-  if (status === 'nokey' || status === 'badkey') chrome.runtime.openOptionsPage();
+  // The badge is easy to miss (the button is hidden until pinned), so say
+  // what went wrong out loud. Success is announced by ZON itself.
+  if (!ok) {
+    quietly(chrome.notifications.create(`zon-${Date.now()}`, {
+      type: 'basic',
+      iconUrl: chrome.runtime.getURL('icon128.png'),
+      title: 'Send to ZON',
+      message: MESSAGES[status],
+    }));
+  }
+  if (status === 'nokey' || status === 'badkey') quietly(chrome.runtime.openOptionsPage());
 }
 
 async function sendAndReport(url, format, tabId) {

@@ -52,19 +52,34 @@ Future<void> main(List<String> args) async {
     },
   );
 
+  // Needed for the browser extension and bookmarklet, and for a second
+  // launch (magnet click on Windows/Linux) to reach this instance.
+  bool apiWanted() => state.settings.localApi || state.settings.magnetHandler;
+
+  Future<void> startApi() async {
+    final ok = await api.start();
+    state.setBrowserLink(ready: ok, problem: api.problem);
+  }
+
+  var wasWanted = false;
   void syncApi() {
-    // Needed for the bookmarklet, and for a second launch (magnet click on
-    // Windows/Linux) to reach this instance.
-    final wanted = state.settings.localApi || state.settings.magnetHandler;
-    if (wanted && !api.running) {
-      unawaited(api.start());
-    } else if (!wanted && api.running) {
+    final wanted = apiWanted();
+    if (wanted == wasWanted) return;
+    wasWanted = wanted;
+    if (wanted) {
+      unawaited(startApi());
+    } else {
       unawaited(api.stop());
+      state.setBrowserLink(ready: false, problem: null);
     }
   }
 
   state.addListener(syncApi);
   syncApi();
+  // The port may be held by a ZON that is quitting; keep trying.
+  Timer.periodic(const Duration(seconds: 5), (_) {
+    if (apiWanted() && !api.running) unawaited(startApi());
+  });
 
   runApp(ZonApp(state: state, nativeIntegration: true));
   state.startTicking();

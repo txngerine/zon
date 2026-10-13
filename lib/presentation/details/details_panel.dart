@@ -4,12 +4,12 @@ import '../../core/theme/app_type.dart';
 import '../../core/theme/zon_palette.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/widgets/empty_state.dart';
-import '../../core/widgets/file_glyph.dart';
 import '../../core/widgets/mono_button.dart';
 import '../../core/widgets/mono_dropdown.dart';
 import '../../core/widgets/progress_bar.dart';
 import '../../data/app_state.dart';
 import '../../domain/models/download.dart';
+import '../common/artwork_preview.dart';
 import '../dashboard/download_card.dart';
 
 /// Right-hand details panel: preview, progress, live speed, connections,
@@ -90,7 +90,7 @@ class DetailsView extends StatelessWidget {
         children: [
           _Toolbar(item: item, onAction: onAction, onClose: onClose),
           const SizedBox(height: 16),
-          _Preview(item: item),
+          ArtworkPreview(item: item),
           const SizedBox(height: 16),
           Text(
             item.fileName,
@@ -508,56 +508,6 @@ class _Toolbar extends StatelessWidget {
             onTap: onClose,
           ),
       ],
-    );
-  }
-}
-
-/// Large artwork: the media thumbnail, or the file-type glyph on a dark
-/// gradient.
-class _Preview extends StatelessWidget {
-  const _Preview({required this.item});
-
-  final DownloadItem item;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    final glyph = Center(
-      child: Icon(
-        item.isTorrent ? Icons.hub_outlined : fileIconFor(item.fileName),
-        size: 54,
-        color: palette.textSecondary,
-      ),
-    );
-    final thumbnail = item.thumbnailUrl;
-
-    return AspectRatio(
-      aspectRatio: 16 / 10,
-      child: Container(
-        clipBehavior: Clip.antiAlias,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: palette.border),
-          gradient: RadialGradient(
-            center: const Alignment(-0.6, -0.8),
-            radius: 1.4,
-            colors: [
-              palette.glow.withValues(alpha: 0.06),
-              palette.surfaceHigh,
-              palette.surface,
-            ],
-            stops: const [0, 0.45, 1],
-          ),
-        ),
-        child: thumbnail == null
-            ? glyph
-            : Image.network(
-                thumbnail,
-                fit: BoxFit.cover,
-                filterQuality: FilterQuality.medium,
-                errorBuilder: (_, _, _) => glyph,
-              ),
-      ),
     );
   }
 }

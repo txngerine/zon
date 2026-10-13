@@ -245,6 +245,22 @@ class AppState extends ChangeNotifier implements TransferListener {
   bool _toolsPending = false;
   bool _disposed = false;
 
+  bool _browserLinkReady = false;
+  String? _browserLinkProblem;
+
+  /// Whether the extension/bookmarklet server is listening.
+  bool get browserLinkReady => _browserLinkReady;
+
+  /// Why it is not, when known (port taken, another ZON running).
+  String? get browserLinkProblem => _browserLinkProblem;
+
+  void setBrowserLink({required bool ready, String? problem}) {
+    if (ready == _browserLinkReady && problem == _browserLinkProblem) return;
+    _browserLinkReady = ready;
+    _browserLinkProblem = problem;
+    notifyListeners();
+  }
+
   /// Finds artwork for plain file downloads; null disables lookups.
   final PageImageFinder? _findImage;
 

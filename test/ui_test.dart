@@ -201,6 +201,34 @@ void main() {
       await finish(tester);
     });
 
+    testWidgets('grid view lays downloads out as tiles', (tester) async {
+      final state = await pumpZon(tester);
+      await tester.tap(find.byTooltip('Grid view'));
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(state.viewMode, ViewMode.grid);
+      expect(find.byType(DownloadGridTile), findsWidgets);
+      expect(find.byType(DownloadCard), findsNothing);
+
+      // Several tiles share a row at desktop width.
+      final tops = {
+        for (final element in find.byType(DownloadGridTile).evaluate())
+          tester.getTopLeft(find.byWidget(element.widget)).dy,
+      };
+      expect(
+        tops.length,
+        lessThan(find.byType(DownloadGridTile).evaluate().length),
+      );
+
+      // A narrower window reflows to fewer columns without overflowing.
+      await tester.binding.setSurfaceSize(const Size(1100, 900));
+      tester.view.physicalSize = const Size(1100, 900);
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(tester.takeException(), isNull);
+
+      await finish(tester);
+    });
+
     testWidgets('settings screen edits preferences', (tester) async {
       final state = await pumpZon(tester);
       state.setSection(AppSection.settings);
