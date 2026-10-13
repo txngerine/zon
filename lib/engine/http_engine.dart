@@ -7,18 +7,27 @@ import 'dart:math';
 import '../core/utils/formatters.dart';
 import '../domain/models/download.dart';
 import 'engine.dart';
+import 'network_paths.dart';
 
 /// Segmented, resumable HTTP(S) downloader.
 ///
 /// Each download is split into up to `connections` byte ranges that are
-/// fetched in parallel and written straight into `<name>.zonpart`. The range
-/// plan is checkpointed to `<stateDir>/<id>.json`, so pausing, quitting or
+/// fetched in parallel and written straight into `<name>.zonpart`. A
+/// connection that runs out of work splits the busiest remaining range, so
+/// every connection stays busy until the last byte. With
+/// [TransferOptions.combineNetworks] the connections are spread over every
+/// network interface (Wi-Fi, Ethernet, a tethered phone, ...) so their
+/// bandwidth adds up. The range plan is
+/// checkpointed to `<stateDir>/<id>.json`, so pausing, quitting or
 /// crashing resumes from the last flushed byte.
 class HttpEngine implements TransferEngine {
-  HttpEngine({required this.stateDir});
+  HttpEngine({required this.stateDir, this.findPaths = findNetworkPaths});
 
   /// Directory for resume checkpoints.
   final String stateDir;
+
+  /// Lists the interfaces used when combining networks.
+  final Future<List<NetworkPath>> Function() findPaths;
 
   TransferListener? _listener;
   final Map<String, _HttpTask> _tasks = {};
@@ -38,6 +47,7 @@ class HttpEngine implements TransferEngine {
       options: options,
       listener: listener,
       planFile: File('$stateDir${Platform.pathSeparator}${item.id}.json'),
+      findPaths: findPaths,
     );
     _tasks[item.id] = task;
     task.run().whenComplete(() {
@@ -104,11 +114,15 @@ class _Segment {
 
   final int start;
 
-  /// Inclusive end byte, or -1 when the total size is unknown.
-  final int end;
+  /// Inclusive end byte, or -1 when the total size is unknown. Shrinks when
+  /// an idle connection takes over the tail of this range.
+  int end;
   int position;
 
   bool get done => end >= 0 && position > end;
+
+  /// Bytes still to fetch; 0 when the end is unknown.
+  int get remaining => end >= 0 ? end - position + 1 : 0;
 
   Map<String, int> toJson() => {'s': start, 'e': end, 'p': position};
 
@@ -185,12 +199,26 @@ class _StoppedException implements Exception {
   const _StoppedException();
 }
 
+/// Connections leaving through one network interface (or the OS default).
+class _Route {
+  _Route(this.client);
+
+  final HttpClient client;
+
+  /// Workers currently assigned here.
+  int users = 0;
+
+  /// Stopped connecting; no new work goes here for this download.
+  bool down = false;
+}
+
 class _HttpTask {
   _HttpTask({
     required this.item,
     required this.options,
     required this.listener,
     required this.planFile,
+    required this.findPaths,
   }) : limiter = RateLimiter(options.speedLimit);
 
   /// Segments smaller than this are not worth an extra connection.
@@ -201,8 +229,10 @@ class _HttpTask {
   final TransferListener listener;
   final File planFile;
   final RateLimiter limiter;
+  final Future<List<NetworkPath>> Function() findPaths;
 
   late final HttpClient _client = _buildClient();
+  late List<_Route> _routes = [_Route(_client)];
   _Plan? _plan;
   bool _stopped = false;
   Object? _fatal;
@@ -214,7 +244,7 @@ class _HttpTask {
   double _speed = 0;
   int _ticks = 0;
 
-  HttpClient _buildClient() {
+  HttpClient _buildClient([InternetAddress? source]) {
     final client = HttpClient()
       ..connectionTimeout = options.connectionTimeout
       ..idleTimeout = const Duration(seconds: 15)
@@ -226,13 +256,40 @@ class _HttpTask {
       final hostPort = proxy.replaceFirst(RegExp(r'^\w+://'), '');
       client.findProxy = (_) => 'PROXY $hostPort';
     }
+    if (source != null) client.connectionFactory = boundConnector(source);
     return client;
+  }
+
+  /// One route per uplink when combining networks, else the default route.
+  Future<void> _buildRoutes(_Plan plan) async {
+    if (!options.combineNetworks || !_splittable(plan)) return;
+    final paths = await findPaths();
+    if (paths.length < 2 || _stopped) return;
+    _routes = [for (final path in paths) _Route(_buildClient(path.address))];
+  }
+
+  /// The working route with the fewest workers.
+  _Route _pickRoute() {
+    final route = _routes
+        .where((route) => !route.down)
+        .reduce((a, b) => b.users < a.users ? b : a);
+    route.users++;
+    return route;
+  }
+
+  void _closeClients() {
+    _client.close(force: true);
+    for (final route in _routes) {
+      route.client.close(force: true);
+    }
   }
 
   Future<void> run() async {
     try {
       final plan = await _loadPlan() ?? await _createPlan();
       _plan = plan;
+      if (_stopped) throw const _StoppedException();
+      await _buildRoutes(plan);
       if (_stopped) throw const _StoppedException();
 
       listener.onMeta(
@@ -241,7 +298,7 @@ class _HttpTask {
           fileName: plan.fileName,
           sizeBytes: plan.size > 0 ? plan.size : null,
           resumeSupported: plan.resumable,
-          connections: plan.segments.length,
+          connections: _workerCount(plan),
         ),
       );
 
@@ -286,7 +343,7 @@ class _HttpTask {
       if (!_stopped) listener.onFailed(item.id, _describe(error));
     } finally {
       _reporter?.cancel();
-      _client.close(force: true);
+      _closeClients();
       if (!_finished.isCompleted) _finished.complete();
     }
   }
@@ -294,7 +351,7 @@ class _HttpTask {
   Future<void> stop() async {
     if (_stopped) return _finished.future;
     _stopped = true;
-    _client.close(force: true);
+    _closeClients();
     return _finished.future;
   }
 
@@ -427,7 +484,25 @@ class _HttpTask {
     }
   }
 
+  /// Whether idle connections may split ranges that are still in flight.
+  static bool _splittable(_Plan plan) => plan.resumable && plan.size > 0;
+
+  /// How many connections [_runWorkers] opens for [plan].
+  int _workerCount(_Plan plan) {
+    final pending = plan.segments.where((segment) => !segment.done).length;
+    if (pending == 0) return 0;
+    if (_splittable(plan)) {
+      final left = plan.size - plan.downloaded;
+      return max(1, min(item.connections, (left / minSegmentBytes).ceil()));
+    }
+    return max(1, min(item.connections, pending));
+  }
+
   /// Runs up to `connections` workers over a shared queue of segments.
+  ///
+  /// A worker that finds the queue empty splits the in-flight segment with
+  /// the most bytes left and takes its back half, so a slow range never
+  /// leaves the download crawling on one connection at the end.
   ///
   /// When the server pushes back (429/503) a worker hands its segment back to
   /// the queue and retires, so the download settles at whatever concurrency
@@ -437,19 +512,50 @@ class _HttpTask {
       plan.segments.where((segment) => !segment.done),
     );
     if (queue.isEmpty) return;
-    var alive = max(1, min(item.connections, queue.length));
+    final active = <_Segment>{};
+    var alive = _workerCount(plan);
     var throttledAttempts = 0;
 
+    _Segment? next() {
+      if (queue.isNotEmpty) return queue.removeFirst();
+      if (!_splittable(plan)) return null;
+      _Segment? victim;
+      for (final segment in active) {
+        if (segment.remaining > (victim?.remaining ?? 0)) victim = segment;
+      }
+      // Both halves must still be worth a connection.
+      if (victim == null || victim.remaining < 2 * minSegmentBytes) {
+        return null;
+      }
+      final mid = victim.position + victim.remaining ~/ 2;
+      final tail = _Segment(mid, victim.end, mid);
+      victim.end = mid - 1;
+      plan.segments.add(tail);
+      return tail;
+    }
+
     Future<void> worker() async {
-      while (!_stopped && _fatal == null && queue.isNotEmpty) {
-        final segment = queue.removeFirst();
+      var route = _pickRoute();
+      while (!_stopped && _fatal == null) {
+        final segment = next();
+        if (segment == null) return;
+        active.add(segment);
         try {
-          await _runSegment(plan, segment);
+          await _runSegment(plan, segment, route);
           throttledAttempts = 0;
+        } on _RouteDown {
+          // Let another worker pick the segment up right away, then carry
+          // on through an interface that still works.
+          active.remove(segment);
+          queue.addFirst(segment);
+          route.users--;
+          route = _pickRoute();
         } on _Throttled catch (throttle) {
+          active.remove(segment);
           queue.addFirst(segment);
           if (alive > 1) {
             alive--;
+            route.users--;
             listener.onMeta(item.id, TransferMeta(connections: alive));
             return;
           }
@@ -468,6 +574,8 @@ class _HttpTask {
         } catch (error) {
           _abort(error);
           return;
+        } finally {
+          active.remove(segment);
         }
       }
     }
@@ -479,10 +587,10 @@ class _HttpTask {
   void _abort(Object error) {
     if (_fatal != null || _stopped) return;
     _fatal = error;
-    _client.close(force: true);
+    _closeClients();
   }
 
-  Future<void> _runSegment(_Plan plan, _Segment segment) async {
+  Future<void> _runSegment(_Plan plan, _Segment segment, _Route route) async {
     var attempts = 0;
     while (!segment.done && !_stopped && _fatal == null) {
       if (!plan.resumable && segment.position > segment.start) {
@@ -492,7 +600,7 @@ class _HttpTask {
       }
       final before = segment.position;
       try {
-        await _transfer(plan, segment);
+        await _transfer(plan, segment, route.client);
         if (segment.end < 0 || segment.done) return;
         throw const HttpException('Connection closed early');
       } on _Throttled {
@@ -500,6 +608,9 @@ class _HttpTask {
       } catch (error) {
         if (_stopped || _fatal != null) return;
         if (error is _FatalHttp) rethrow;
+        if (_routeFailed(route, error, progressed: segment.position > before)) {
+          throw const _RouteDown();
+        }
         if (segment.position > before) attempts = 0;
         attempts++;
         if (attempts > options.retryCount) rethrow;
@@ -508,8 +619,28 @@ class _HttpTask {
     }
   }
 
-  Future<void> _transfer(_Plan plan, _Segment segment) async {
-    final request = await _client
+  /// Whether [route] should be abandoned after [error].
+  ///
+  /// An interface that cannot even open a connection (no uplink, captive
+  /// portal, cable pulled) is dropped as long as another one still works.
+  bool _routeFailed(_Route route, Object error, {required bool progressed}) {
+    if (route.down) return true;
+    final network =
+        error is SocketException ||
+        error is TimeoutException ||
+        error is HandshakeException;
+    if (!network || progressed) return false;
+    if (_routes.where((other) => !other.down).length < 2) return false;
+    route.down = true;
+    return true;
+  }
+
+  Future<void> _transfer(
+    _Plan plan,
+    _Segment segment,
+    HttpClient client,
+  ) async {
+    final request = await client
         .getUrl(Uri.parse(plan.url))
         .timeout(options.requestTimeout);
     if (plan.resumable) {
@@ -556,6 +687,11 @@ class _HttpTask {
         await limiter.take(bytes.length);
         await file.writeFrom(bytes);
         segment.position += bytes.length;
+        if (segment.end >= 0 && segment.position > segment.end + 1) {
+          // The tail was split off mid-chunk. The overlap holds the same
+          // bytes the new segment writes, so only the count needs fixing.
+          segment.position = segment.end + 1;
+        }
         if (segment.done) break;
       }
       await file.flush();
@@ -605,6 +741,11 @@ class _Throttled implements Exception {
   const _Throttled(this.status, this.retryAfter);
   final int status;
   final Duration? retryAfter;
+}
+
+/// The worker's network interface stopped working.
+class _RouteDown implements Exception {
+  const _RouteDown();
 }
 
 class _FatalHttp implements Exception {

@@ -14,6 +14,7 @@ class TransferOptions {
     this.audioQuality = '320K',
     this.embedMetadata = true,
     this.seedRatio,
+    this.combineNetworks = false,
   });
 
   final String userAgent;
@@ -31,6 +32,9 @@ class TransferOptions {
 
   /// Torrents: ratio to seed to after finishing; null stops at 100%.
   final double? seedRatio;
+
+  /// HTTP: spread connections over every network interface.
+  final bool combineNetworks;
 }
 
 /// Facts a transfer learns about its download while running.

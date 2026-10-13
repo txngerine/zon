@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zon/domain/models/download.dart';
 import 'package:zon/engine/engine.dart';
 import 'package:zon/engine/http_engine.dart';
+import 'package:zon/engine/network_paths.dart';
 
 class _Recorder implements TransferListener {
   final metas = <TransferMeta>[];
@@ -160,6 +161,114 @@ void main() {
       const Duration(seconds: 30),
     );
     expect(await File(path).readAsBytes(), body);
+  });
+
+  test('idle connections split the slowest range', () async {
+    // The first half of the file trickles; the second half is instant.
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(server.close);
+    final starts = <int>[];
+    server.listen((request) async {
+      final response = request.response;
+      final match = RegExp(r'bytes=(\d+)-(\d*)')
+          .firstMatch(request.headers.value('range')!)!;
+      final start = int.parse(match.group(1)!);
+      final end = match.group(2)!.isEmpty
+          ? body.length - 1
+          : int.parse(match.group(2)!);
+      starts.add(start);
+      response.statusCode = 206;
+      response.headers.set('content-range', 'bytes $start-$end/${body.length}');
+      response.contentLength = end - start + 1;
+      final slow = start == 0 && end > 0;
+      try {
+        for (var offset = start; offset <= end; offset += 64 * 1024) {
+          response.add(body.sublist(offset, min(offset + 64 * 1024, end + 1)));
+          if (slow) {
+            await response.flush();
+            await Future<void>.delayed(const Duration(milliseconds: 30));
+          }
+        }
+        await response.close();
+      } catch (_) {
+        // The engine cut this range short after splitting it.
+      }
+    });
+
+    final engine = HttpEngine(stateDir: '${temp.path}/state');
+    final recorder = _Recorder();
+    engine.listener = recorder;
+    engine.start(
+      _item(
+        'http://127.0.0.1:${server.port}/payload.bin',
+        temp.path,
+        connections: 2,
+      ),
+      options,
+    );
+    final path = await recorder.completed.future.timeout(
+      const Duration(seconds: 30),
+    );
+
+    expect(await File(path).readAsBytes(), body);
+    final half = (body.length / 2).ceil();
+    // Besides the probe and the two planned ranges, the fast connection
+    // came back for a piece of the slow first half.
+    expect(starts.where((s) => s > 0 && s < half), isNotEmpty);
+  });
+
+  test('combined networks finish when one interface is dead', () async {
+    final server = await _serve(body);
+    addTearDown(server.close);
+    var lookups = 0;
+    final engine = HttpEngine(
+      stateDir: '${temp.path}/state',
+      findPaths: () async {
+        lookups++;
+        return [
+          // TEST-NET-1: never assigned locally, so binding to it fails.
+          NetworkPath('dead0', InternetAddress('192.0.2.1')),
+          NetworkPath('lo0', InternetAddress.loopbackIPv4),
+        ];
+      },
+    );
+    final recorder = _Recorder();
+    engine.listener = recorder;
+    engine.start(
+      _item('http://127.0.0.1:${server.port}/payload.bin', temp.path),
+      const TransferOptions(
+        retryDelay: Duration(milliseconds: 50),
+        combineNetworks: true,
+      ),
+    );
+    final path = await recorder.completed.future.timeout(
+      const Duration(seconds: 20),
+    );
+
+    expect(await File(path).readAsBytes(), body);
+    expect(lookups, 1);
+    expect(recorder.failed.isCompleted, isFalse);
+  });
+
+  test('interfaces are only listed when combining networks', () async {
+    final server = await _serve(body);
+    addTearDown(server.close);
+    var lookups = 0;
+    final engine = HttpEngine(
+      stateDir: '${temp.path}/state',
+      findPaths: () async {
+        lookups++;
+        return const [];
+      },
+    );
+    final recorder = _Recorder();
+    engine.listener = recorder;
+    engine.start(
+      _item('http://127.0.0.1:${server.port}/payload.bin', temp.path),
+      options,
+    );
+    await recorder.completed.future.timeout(const Duration(seconds: 20));
+    expect(lookups, 0);
   });
 
   test('servers without range support download in one stream', () async {

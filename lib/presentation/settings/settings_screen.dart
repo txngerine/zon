@@ -14,6 +14,7 @@ import '../../data/app_state.dart';
 import '../../domain/models/app_settings.dart';
 import '../../domain/models/media_format.dart';
 import '../../engine/media/ytdlp.dart';
+import '../../engine/network_paths.dart';
 import '../common/browser_integration_dialog.dart';
 
 /// Complete settings screen organised in the sections defined by the product
@@ -295,6 +296,12 @@ class SettingsScreen extends StatelessWidget {
                 ),
               ]),
               _section(context, 'NETWORK', [
+                _CombineNetworksRow(
+                  value: _settings.combineNetworks,
+                  onChanged: (value) =>
+                      _update(_settings.copyWith(combineNetworks: value)),
+                  row: _row,
+                ),
                 _row(
                   context,
                   'Proxy',
@@ -809,6 +816,66 @@ class _InlineFieldState extends State<_InlineField> {
 }
 
 /// yt-dlp / ffmpeg status and media download preferences.
+/// Toggle for combining interfaces, listing the ones ZON can see.
+class _CombineNetworksRow extends StatefulWidget {
+  const _CombineNetworksRow({
+    required this.value,
+    required this.onChanged,
+    required this.row,
+  });
+
+  final bool value;
+  final ValueChanged<bool> onChanged;
+  final Widget Function(BuildContext, String, String, Widget) row;
+
+  @override
+  State<_CombineNetworksRow> createState() => _CombineNetworksRowState();
+}
+
+class _CombineNetworksRowState extends State<_CombineNetworksRow> {
+  List<NetworkPath>? _paths;
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+  }
+
+  Future<void> _refresh() async {
+    final paths = await findNetworkPaths();
+    if (mounted) setState(() => _paths = paths);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final paths = _paths;
+    final names = paths?.map((path) => path.name).join(', ');
+    final String found;
+    if (paths == null) {
+      found = 'Looking for connections…';
+    } else if (paths.length < 2) {
+      found = paths.isEmpty
+          ? 'No connections found'
+          : 'Only one connection found ($names) — connect another to combine';
+    } else {
+      found = 'Using $names';
+    }
+    return widget.row(
+      context,
+      'Combine network connections',
+      'Download over Wi-Fi, Ethernet and tethered phones at once. Bypasses '
+          'VPNs. $found',
+      MonoSwitch(
+        value: widget.value,
+        onChanged: (value) {
+          widget.onChanged(value);
+          unawaited(_refresh());
+        },
+      ),
+    );
+  }
+}
+
 class _MediaSection extends StatelessWidget {
   const _MediaSection({
     required this.state,
@@ -842,6 +909,18 @@ class _MediaSection extends StatelessWidget {
     } else {
       ytDlpStatus =
           'Not installed — needed for YouTube, Reels, TikTok and 1000+ sites';
+    }
+
+    final hasPinterestDl = tools?.hasPinterestDl ?? false;
+    final pinterestStage = state.installStage;
+    final String pinterestStatus;
+    if (busy && pinterestStage != null && install == null) {
+      pinterestStatus = '$pinterestStage…';
+    } else if (hasPinterestDl) {
+      pinterestStatus = 'Found • ${tools!.pinterestDlPath}';
+    } else {
+      pinterestStatus =
+          'Optional — adds Pinterest boards, image pins and pin.it links';
     }
 
     final installCommand = Platform.isMacOS
@@ -891,6 +970,26 @@ class _MediaSection extends StatelessWidget {
               tooltip: 'Re-scan',
               onTap: busy ? null : () => unawaited(state.refreshMediaTools()),
             ),
+          ],
+        ),
+      ),
+      row(
+        context,
+        'pinterest-dl',
+        pinterestStatus,
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (!hasPinterestDl || tools!.isPinterestDlManaged)
+              MonoButton(
+                label: hasPinterestDl ? 'Update' : 'Install',
+                icon: hasPinterestDl
+                    ? Icons.system_update_alt_rounded
+                    : Icons.download_rounded,
+                onTap: busy || tools == null
+                    ? null
+                    : () => unawaited(state.installPinterestDl()),
+              ),
           ],
         ),
       ),

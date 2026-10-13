@@ -15,6 +15,7 @@ import '../engine/engine.dart';
 import '../engine/http_engine.dart';
 import '../engine/media/media_engine.dart';
 import '../engine/media/media_sites.dart';
+import '../engine/media/pinterest.dart';
 import '../engine/media/ytdlp.dart';
 import '../engine/torrent/torrent_engine.dart';
 import '../platform/local_api.dart';
@@ -480,6 +481,7 @@ class AppState extends ChangeNotifier implements TransferListener {
     String createdVia = 'Manual',
     bool notify = true,
     bool? lockName,
+    String? source,
   }) {
     final link = url.trim();
     final site = detectMediaSite(link);
@@ -516,7 +518,7 @@ class AppState extends ChangeNotifier implements TransferListener {
         : savePath.trim();
     path = expandHome(path, environment: Platform.environment);
     if (createSubfolder) {
-      path = '$path${Platform.pathSeparator}${site?.name ?? host}';
+      path = '$path${Platform.pathSeparator}${source ?? site?.name ?? host}';
     }
 
     final now = DateTime.now();
@@ -530,7 +532,7 @@ class AppState extends ChangeNotifier implements TransferListener {
       id: _uniqueId(now),
       fileName: name,
       url: link,
-      source: isTorrent ? 'BitTorrent' : (site?.name ?? host),
+      source: source ?? (isTorrent ? 'BitTorrent' : (site?.name ?? host)),
       sizeBytes: 0,
       downloadedBytes: 0,
       status: DownloadStatus.queued,
@@ -986,6 +988,36 @@ class AppState extends ChangeNotifier implements TransferListener {
     }
   }
 
+  Future<bool> installPinterestDl() async {
+    final tools = _tools;
+    if (tools == null || _toolsBusy) return false;
+    final updating = tools.hasPinterestDl;
+    _toolsBusy = true;
+    _installStage = 'Installing pinterest-dl';
+    notifyListeners();
+    try {
+      await tools.installPinterestDl(
+        onStage: (stage) {
+          _installStage = stage;
+          notifyListeners();
+        },
+      );
+      showToast(
+        updating
+            ? 'pinterest-dl is up to date'
+            : 'pinterest-dl installed — Pinterest boards and pins are ready',
+      );
+      return true;
+    } catch (error) {
+      showToast('$error');
+      return false;
+    } finally {
+      _toolsBusy = false;
+      _installStage = null;
+      if (!_disposed) notifyListeners();
+    }
+  }
+
   Future<bool> installAria2() async {
     final tools = _tools;
     if (tools == null || _toolsBusy) return false;
@@ -1119,6 +1151,25 @@ class AppState extends ChangeNotifier implements TransferListener {
     String? speedLimit,
     String createdVia = 'Manual',
   }) async {
+    if (isPinterestUrl(url) && (_tools?.hasPinterestDl ?? false)) {
+      showToast('Reading Pinterest…');
+      try {
+        final pins = await _tools!.resolvePinterest(url);
+        return _createPinterestDownloads(
+          pins,
+          format: mediaFormat,
+          savePath: savePath,
+          connections: connections,
+          priority: priority,
+          startImmediately: startImmediately,
+          createSubfolder: createSubfolder,
+          speedLimit: speedLimit,
+          createdVia: createdVia,
+        );
+      } catch (_) {
+        // Fall through to yt-dlp, which handles single video pins too.
+      }
+    }
     if (looksLikePlaylist(url) && (_tools?.hasYtDlp ?? false)) {
       showToast('Reading playlist…');
       try {
@@ -1151,6 +1202,65 @@ class AppState extends ChangeNotifier implements TransferListener {
       createdVia: createdVia,
     );
     return 1;
+  }
+
+  /// Queues resolved Pinterest pins: videos as video (or audio when asked),
+  /// image pins as the original image.
+  int _createPinterestDownloads(
+    List<PinterestPin> pins, {
+    MediaFormat? format,
+    String? savePath,
+    int? connections,
+    DownloadPriority priority = DownloadPriority.normal,
+    bool startImmediately = true,
+    bool createSubfolder = false,
+    String? speedLimit,
+    String createdVia = 'Manual',
+  }) {
+    for (final pin in pins) {
+      final video = pin.videoUrl;
+      final wantsAudio = format?.isAudio ?? false;
+      final isPlainMp4 =
+          video != null &&
+          Uri.tryParse(video)?.path.toLowerCase().endsWith('.mp4') == true;
+      final DownloadKind kind;
+      final String url;
+      final String name;
+      if (video == null) {
+        // Image pin: keep the image's own extension.
+        url = pin.imageUrl;
+        kind = DownloadKind.file;
+        final ext = fileNameFromUrl(url, fallback: 'pin.jpg').split('.').last;
+        name = '${pin.title}.$ext';
+      } else if (isPlainMp4 && !wantsAudio) {
+        url = video;
+        kind = DownloadKind.file;
+        name = '${pin.title}.mp4';
+      } else {
+        // HLS needs yt-dlp to stitch fragments; audio needs its conversion.
+        url = video;
+        kind = DownloadKind.media;
+        name = pin.title;
+      }
+      createDownload(
+        url: url,
+        fileName: name,
+        savePath: savePath,
+        connections: connections,
+        priority: priority,
+        startImmediately: startImmediately,
+        createSubfolder: createSubfolder,
+        kind: kind,
+        mediaFormat: kind == DownloadKind.media ? format : null,
+        speedLimit: speedLimit,
+        thumbnailUrl: pin.imageUrl,
+        createdVia: createdVia,
+        notify: pins.length == 1,
+        source: 'Pinterest',
+      );
+    }
+    if (pins.length > 1) showToast('Added ${pins.length} pins from Pinterest');
+    return pins.length;
   }
 
   // --------------------------------------------------------------------------
@@ -1526,6 +1636,7 @@ class AppState extends ChangeNotifier implements TransferListener {
   TransferOptions _optionsFor(DownloadItem item) => TransferOptions(
     userAgent: _settings.userAgent,
     proxy: _settings.proxy,
+    combineNetworks: _settings.combineNetworks,
     connectionTimeout: Duration(seconds: _settings.connectionTimeout),
     requestTimeout: Duration(seconds: _settings.requestTimeout),
     retryCount: _settings.retryCount,

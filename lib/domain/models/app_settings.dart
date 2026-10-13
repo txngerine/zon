@@ -13,6 +13,7 @@ class AppSettings {
     this.retryCount = 5,
     this.retryDelay = 3,
     this.proxy = '',
+    this.combineNetworks = false,
     this.userAgent = 'ZON/1.0',
     this.connectionTimeout = 30,
     this.requestTimeout = 60,
@@ -49,6 +50,9 @@ class AppSettings {
   final int retryDelay;
 
   final String proxy;
+
+  /// Spread HTTP connections over every network interface at once.
+  final bool combineNetworks;
   final String userAgent;
   final int connectionTimeout;
   final int requestTimeout;
@@ -140,6 +144,7 @@ class AppSettings {
     int? retryCount,
     int? retryDelay,
     String? proxy,
+    bool? combineNetworks,
     String? userAgent,
     int? connectionTimeout,
     int? requestTimeout,
@@ -175,6 +180,7 @@ class AppSettings {
       retryCount: retryCount ?? this.retryCount,
       retryDelay: retryDelay ?? this.retryDelay,
       proxy: proxy ?? this.proxy,
+      combineNetworks: combineNetworks ?? this.combineNetworks,
       userAgent: userAgent ?? this.userAgent,
       connectionTimeout: connectionTimeout ?? this.connectionTimeout,
       requestTimeout: requestTimeout ?? this.requestTimeout,
@@ -211,6 +217,7 @@ class AppSettings {
     'retryCount': retryCount,
     'retryDelay': retryDelay,
     'proxy': proxy,
+    'combineNetworks': combineNetworks,
     'userAgent': userAgent,
     'connectionTimeout': connectionTimeout,
     'requestTimeout': requestTimeout,
@@ -259,6 +266,7 @@ class AppSettings {
       retryCount: read('retryCount', d.retryCount),
       retryDelay: read('retryDelay', d.retryDelay),
       proxy: read('proxy', d.proxy),
+      combineNetworks: read('combineNetworks', d.combineNetworks),
       userAgent: read('userAgent', d.userAgent),
       connectionTimeout: read('connectionTimeout', d.connectionTimeout),
       requestTimeout: read('requestTimeout', d.requestTimeout),

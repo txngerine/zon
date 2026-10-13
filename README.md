@@ -9,6 +9,11 @@ A cross-platform (macOS, Windows, Linux) download manager built with Flutter.
 - **Segmented HTTP engine** — splits files into up to 32 parallel byte ranges,
   resumes after pause, quit or crash, retries with backoff, and backs off
   automatically when a server answers `429 Too Many Requests`.
+- **Combined networks** — optionally spreads those connections over every
+  uplink at once (Wi-Fi, Ethernet, a tethered phone) so their bandwidth adds
+  up; an interface that stops working is dropped mid-download
+  (**Settings › Network**). Bound connections bypass VPNs. On Linux this needs
+  source-based routing for each interface.
 - **Video & audio** — YouTube (videos, Shorts, playlists, channels), Instagram
   Reels, TikTok, X, Facebook, Vimeo, SoundCloud, Twitch, Reddit and 1000+ more
   sites via [yt-dlp](https://github.com/yt-dlp/yt-dlp). Pick Best / 4K /
@@ -59,6 +64,15 @@ browser downloads to ZON (the browser copy is cancelled only after ZON accepts i
 Everything goes to a server bound to `127.0.0.1:6412` only, and each install has
 its own secret key, so other websites cannot add downloads. The dialog also still
 offers bookmarklets for browsers without the extension.
+
+## Pinterest
+
+Single video pins work through yt-dlp. For boards, sections, image pins and
+`pin.it` short links, install **pinterest-dl** under **Settings › Media**. ZON
+puts it in a private Python environment in its app-support `bin/` folder, using
+Python 3.10+ or `uv`. ZON uses it only to read the pins; the files then download
+through ZON's own engines: HLS video through yt-dlp, plain MP4 and images
+directly. A board adds up to 100 pins. Some video pins have no audio track.
 
 ## Instagram, private and age-restricted videos
 
