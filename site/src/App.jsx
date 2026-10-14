@@ -16,7 +16,7 @@ const PLATFORMS = [
     id: 'windows',
     name: 'Windows',
     detail: 'x64',
-    file: 'zon-windows-x64.zip',
+    file: 'zon-windows-x64-setup.exe',
     match: /Win/,
     icon: 'window',
   },

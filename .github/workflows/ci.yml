@@ -146,14 +146,56 @@ jobs:
         shell: bash
         run: tar -czf "${{ matrix.artifact }}.tar.gz" -C "$(dirname "${{ matrix.output }}")" "$(basename "${{ matrix.output }}")"
 
+      - name: Installer (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $pubspec = Get-Content pubspec.yaml -Raw
+          if ($pubspec -notmatch '(?m)^version:\s*(\d+)\.(\d+)\.(\d+)\+(\d+)') {
+            throw 'Could not read version from pubspec.yaml'
+          }
+          $version = "$($Matches[1]).$($Matches[2]).$($Matches[3])"
+          $makensis = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
+          if (-not (Test-Path $makensis)) { throw "makensis not found at $makensis" }
+          & $makensis `
+            "/DVERSION=$version" `
+            "/DVERSION_QUAD=$version.$($Matches[4])" `
+            "/DAPPDIR=$PWD\${{ matrix.output }}" `
+            "/DOUTFILE=$PWD\${{ matrix.artifact }}-setup.exe" `
+            windows\installer\zon.nsi
+
       - name: Package (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: Compress-Archive -Path "${{ matrix.output }}" -DestinationPath "${{ matrix.artifact }}.zip"
+        run: |
+          $stage = '${{ matrix.artifact }}'
+          Move-Item '${{ matrix.output }}' $stage
+          Compress-Archive -Path $stage -DestinationPath "$stage.zip"
 
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: ${{ matrix.artifact }}.*
+          path: |
+            ${{ matrix.artifact }}.*
+            ${{ matrix.artifact }}-*
           if-no-files-found: error
           retention-days: 14
+
+  release:
+    name: Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

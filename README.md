@@ -65,7 +65,10 @@ flutter run -d macos
 
 `.github/workflows/ci.yml` runs the formatter, analyzer and tests on Linux,
 macOS and Windows, then packages a release build per platform (pushes to
-`main`, tags and manual runs).
+`main`, tags and manual runs): a zip on macOS, a tarball on Linux, and on
+Windows both a portable zip and an NSIS installer
+(`zon-windows-x64-setup.exe`, per-user, no admin rights needed). Tags matching
+`v*` publish the artifacts to a GitHub Release automatically.
 
 `tool/bundle_tools.dart` downloads pinned, sha256-verified archives for the
 target platform (`--platform macos|linux|windows`, `--arch`, `--force`) into
