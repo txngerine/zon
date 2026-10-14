@@ -155,7 +155,11 @@ jobs:
             throw 'Could not read version from pubspec.yaml'
           }
           $version = "$($Matches[1]).$($Matches[2]).$($Matches[3])"
+          # windows-latest (Server 2025) no longer ships NSIS; install it.
           $makensis = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
+          if (-not (Test-Path $makensis)) {
+            choco install nsis -y --no-progress
+          }
           if (-not (Test-Path $makensis)) { throw "makensis not found at $makensis" }
           & $makensis `
             "/DVERSION=$version" `
