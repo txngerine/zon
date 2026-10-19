@@ -39,12 +39,12 @@ class _FallbackMark extends StatelessWidget {
     return Container(
       width: size,
       height: size,
-      color: const Color(0xFF111111),
+      color: const Color(0xFF00674F),
       alignment: Alignment.center,
       child: Text(
         'Z',
         style: TextStyle(
-          color: const Color(0xFF1FE3A0),
+          color: const Color(0xFF000000),
           fontSize: size * 0.56,
           fontWeight: FontWeight.w800,
           height: 1,
