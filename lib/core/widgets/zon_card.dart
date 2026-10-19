@@ -46,8 +46,11 @@ class _ZonCardState extends State<ZonCard> {
       background = widget.backgroundColor!;
       border = widget.borderColor ?? palette.border;
     } else if (widget.selected) {
-      background = palette.surfaceHigh;
-      border = palette.textPrimary.withValues(alpha: 0.16);
+      background = Color.alphaBlend(
+        palette.glow.withValues(alpha: 0.07),
+        palette.surface,
+      );
+      border = palette.glow.withValues(alpha: 0.45);
     } else if (_hovered && interactive) {
       background = palette.surfaceHigh;
       border = palette.borderStrong;
@@ -67,9 +70,8 @@ class _ZonCardState extends State<ZonCard> {
         boxShadow: widget.selected
             ? [
                 BoxShadow(
-                  color: palette.shadow.withValues(alpha: 0.35),
-                  blurRadius: 18,
-                  offset: const Offset(0, 6),
+                  color: palette.glow.withValues(alpha: 0.12),
+                  blurRadius: 24,
                 ),
               ]
             : null,

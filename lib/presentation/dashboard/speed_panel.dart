@@ -7,7 +7,7 @@ import '../../core/theme/zon_palette.dart';
 import '../../core/widgets/zon_card.dart';
 import '../../data/app_state.dart';
 
-/// Compact transfer analytics: current rate, peak, average and a monochrome
+/// Compact transfer analytics: current rate, peak, average and a neon
 /// line graph that animates smoothly as samples arrive.
 class SpeedPanel extends StatelessWidget {
   const SpeedPanel({super.key, required this.state});
@@ -47,16 +47,29 @@ class SpeedPanel extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 10),
-              Text(
-                _format(state.totalSpeed),
-                style: TextStyle(
-                  color: palette.textPrimary,
-                  fontSize: 34,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: -1,
-                  fontFeatures: AppType.tabular,
-                  height: 1,
-                ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    _format(state.totalSpeed),
+                    style: TextStyle(
+                      color: palette.textPrimary,
+                      fontSize: 34,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: -1,
+                      fontFeatures: AppType.tabular,
+                      height: 1,
+                    ),
+                  ),
+                  if (live) ...[
+                    const SizedBox(width: 8),
+                    Icon(
+                      Icons.keyboard_double_arrow_up_rounded,
+                      size: 22,
+                      color: palette.glow,
+                    ),
+                  ],
+                ],
               ),
             ],
           );
@@ -156,7 +169,7 @@ class _StatBlock extends StatelessWidget {
         Text(
           value,
           style: TextStyle(
-            color: palette.textSecondary,
+            color: palette.textPrimary,
             fontSize: 15,
             fontWeight: FontWeight.w600,
             fontFeatures: AppType.tabular,
@@ -198,7 +211,7 @@ class _LiveDotState extends State<_LiveDot>
         width: 6,
         height: 6,
         decoration: BoxDecoration(
-          color: context.palette.textPrimary,
+          color: context.palette.glow,
           shape: BoxShape.circle,
         ),
       ),
@@ -206,7 +219,7 @@ class _LiveDotState extends State<_LiveDot>
   }
 }
 
-/// Smoothly animated monochrome line chart.
+/// Smoothly animated neon line chart.
 class SpeedGraph extends StatefulWidget {
   const SpeedGraph({super.key, required this.samples, this.height = 100});
 
@@ -274,7 +287,8 @@ class _SpeedGraphState extends State<SpeedGraph>
           size: Size(double.infinity, widget.height),
           painter: _SpeedGraphPainter(
             values: _controller.isAnimating ? _current() : _to,
-            line: palette.textPrimary,
+            line: palette.glow,
+            dot: palette.textPrimary,
             grid: palette.border,
           ),
         );
@@ -287,11 +301,13 @@ class _SpeedGraphPainter extends CustomPainter {
   _SpeedGraphPainter({
     required this.values,
     required this.line,
+    required this.dot,
     required this.grid,
   });
 
   final List<double> values;
   final Color line;
+  final Color dot;
   final Color grid;
 
   @override
@@ -305,6 +321,13 @@ class _SpeedGraphPainter extends CustomPainter {
     for (var i = 1; i <= 3; i++) {
       final y = size.height * i / 4;
       canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
+    }
+    final columnPaint = Paint()
+      ..color = grid.withValues(alpha: 0.35)
+      ..strokeWidth = 0.8;
+    for (var i = 1; i < 12; i++) {
+      final x = size.width * i / 12;
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), columnPaint);
     }
 
     if (values.length < 2) return;
@@ -338,8 +361,18 @@ class _SpeedGraphPainter extends CustomPainter {
         ..shader = LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [line.withValues(alpha: 0.16), line.withValues(alpha: 0.0)],
+          colors: [line.withValues(alpha: 0.22), line.withValues(alpha: 0.0)],
         ).createShader(Offset.zero & size),
+    );
+
+    // Bloom under the stroke.
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = line.withValues(alpha: 0.55)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 4
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
     );
 
     canvas.drawPath(
@@ -353,14 +386,21 @@ class _SpeedGraphPainter extends CustomPainter {
     );
 
     final last = points.last;
-    canvas.drawCircle(last, 7, Paint()..color = line.withValues(alpha: 0.14));
-    canvas.drawCircle(last, 3, Paint()..color = line);
+    canvas.drawCircle(
+      last,
+      9,
+      Paint()
+        ..color = line.withValues(alpha: 0.35)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
+    );
+    canvas.drawCircle(last, 4, Paint()..color = dot);
   }
 
   @override
   bool shouldRepaint(_SpeedGraphPainter oldDelegate) =>
       oldDelegate.values != values ||
       oldDelegate.line != line ||
+      oldDelegate.dot != dot ||
       oldDelegate.grid != grid;
 }
 

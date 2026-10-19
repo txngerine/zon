@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 
 import 'app.dart';
 import 'data/app_state.dart';
+import 'engine/torrent/torrent_engine.dart';
 import 'platform/desktop_shell.dart';
 import 'platform/local_api.dart';
 
@@ -43,7 +44,13 @@ Future<void> main(List<String> args) async {
   final api = LocalApiServer(
     token: () => state.settings.apiToken,
     onAdd: (url, format) {
-      unawaited(state.addFromBrowser(url, format: format));
+      // Magnets forwarded by a second launch (a click on Windows/Linux) get
+      // the Add dialog, same as on macOS.
+      unawaited(
+        isTorrentLink(url)
+            ? state.addIncoming(url)
+            : state.addFromBrowser(url, format: format),
+      );
       unawaited(shell.show());
     },
     onAddFile: (path) {
@@ -66,6 +73,7 @@ Future<void> main(List<String> args) async {
   state.addListener(syncApi);
   syncApi();
 
+  state.promptForTorrents = true;
   runApp(ZonApp(state: state, nativeIntegration: true));
   state.startTicking();
   unawaited(shell.init());

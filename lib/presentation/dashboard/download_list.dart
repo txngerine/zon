@@ -156,7 +156,7 @@ class _Header extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final wide = constraints.maxWidth > 900;
+        final wide = constraints.maxWidth > 620;
 
         final title = Row(
           mainAxisSize: MainAxisSize.min,

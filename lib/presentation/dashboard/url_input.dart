@@ -110,36 +110,40 @@ class _UrlInputBarState extends State<UrlInputBar> {
           ),
         ),
         const SizedBox(height: 14),
-        Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: [
-            _QuickChip(
-              icon: Icons.content_paste_rounded,
-              label: 'From Clipboard',
-              onTap: () => widget.onQuickAction(QuickAction.clipboard),
-            ),
-            _QuickChip(
-              icon: Icons.format_list_bulleted_rounded,
-              label: 'Multiple Links',
-              onTap: () => widget.onQuickAction(QuickAction.multiple),
-            ),
-            _QuickChip(
-              icon: Icons.smart_display_outlined,
-              label: 'YouTube / Reels / MP3',
-              onTap: () => widget.onQuickAction(QuickAction.media),
-            ),
-            _QuickChip(
-              icon: Icons.hub_outlined,
-              label: 'Torrent / Magnet',
-              onTap: () => widget.onQuickAction(QuickAction.torrent),
-            ),
-            _QuickChip(
-              icon: Icons.playlist_add_rounded,
-              label: 'Batch Download',
-              onTap: () => widget.onQuickAction(QuickAction.batch),
-            ),
-          ],
+        SizedBox(
+          width: double.infinity,
+          child: Wrap(
+            spacing: 6,
+            runSpacing: 8,
+            alignment: WrapAlignment.center,
+            children: [
+              _QuickChip(
+                icon: Icons.content_paste_rounded,
+                label: 'From Clipboard',
+                onTap: () => widget.onQuickAction(QuickAction.clipboard),
+              ),
+              _QuickChip(
+                icon: Icons.format_list_bulleted_rounded,
+                label: 'Multiple Links',
+                onTap: () => widget.onQuickAction(QuickAction.multiple),
+              ),
+              _QuickChip(
+                icon: Icons.smart_display_outlined,
+                label: 'YouTube / Reels / MP3',
+                onTap: () => widget.onQuickAction(QuickAction.media),
+              ),
+              _QuickChip(
+                icon: Icons.hub_outlined,
+                label: 'Torrent / Magnet',
+                onTap: () => widget.onQuickAction(QuickAction.torrent),
+              ),
+              _QuickChip(
+                icon: Icons.playlist_add_rounded,
+                label: 'Batch Download',
+                onTap: () => widget.onQuickAction(QuickAction.batch),
+              ),
+            ],
+          ),
         ),
       ],
     );
@@ -178,10 +182,10 @@ class _QuickChipState extends State<_QuickChip> {
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 140),
           height: 34,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 11),
           decoration: BoxDecoration(
-            color: _hovered ? palette.surfaceHighest : palette.surfaceHigh,
-            borderRadius: BorderRadius.circular(10),
+            color: _hovered ? palette.surfaceHighest : palette.surface,
+            borderRadius: BorderRadius.circular(17),
             border: Border.all(
               color: _hovered ? palette.borderStrong : palette.border,
             ),
@@ -190,7 +194,7 @@ class _QuickChipState extends State<_QuickChip> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(widget.icon, size: 15, color: foreground),
-              const SizedBox(width: 8),
+              const SizedBox(width: 7),
               Flexible(
                 child: Text(
                   widget.label,

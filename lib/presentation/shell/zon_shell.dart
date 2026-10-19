@@ -64,6 +64,9 @@ class _ZonShellState extends State<ZonShell> with WidgetsBindingObserver {
   /// Link found on the clipboard, offered in a banner.
   String? _clipboardOffer;
 
+  /// An OS-opened torrent's Add dialog is on screen.
+  bool _promptingTorrent = false;
+
   AppState get state => widget.state;
 
   @override
@@ -71,8 +74,11 @@ class _ZonShellState extends State<ZonShell> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _splashTimer = Timer(const Duration(milliseconds: 1400), () {
-      if (mounted) setState(() => _splashVisible = false);
+      if (!mounted) return;
+      setState(() => _splashVisible = false);
+      unawaited(_promptTorrents());
     });
+    state.addListener(_onStateForTorrents);
     // Whatever is on the clipboard at launch is old news.
     unawaited(
       Clipboard.getData(Clipboard.kTextPlain)
@@ -84,6 +90,7 @@ class _ZonShellState extends State<ZonShell> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    state.removeListener(_onStateForTorrents);
     _splashTimer?.cancel();
     super.dispose();
   }
@@ -100,6 +107,31 @@ class _ZonShellState extends State<ZonShell> with WidgetsBindingObserver {
       final link = state.takeClipboardLink(data?.text);
       if (link != null && mounted) setState(() => _clipboardOffer = link);
     } catch (_) {}
+  }
+
+  void _onStateForTorrents() => unawaited(_promptTorrents());
+
+  /// Shows the Add dialog for each magnet / `.torrent` the OS handed over,
+  /// one at a time, once the splash is gone.
+  Future<void> _promptTorrents() async {
+    if (_promptingTorrent || _splashVisible || !mounted) return;
+    _promptingTorrent = true;
+    try {
+      while (mounted) {
+        final link = state.takeTorrentPrompt();
+        if (link == null) break;
+        final isFile = !link.contains(':') || File(link).isAbsolute;
+        await AddDownloadDialog.show(
+          context,
+          state: state,
+          mode: AddDownloadMode.torrent,
+          initialUrl: isFile ? '' : link,
+          initialTorrentFile: isFile ? link : null,
+        );
+      }
+    } finally {
+      _promptingTorrent = false;
+    }
   }
 
   void _acceptClipboardOffer() {

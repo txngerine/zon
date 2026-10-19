@@ -4,6 +4,9 @@ import '../theme/zon_palette.dart';
 
 /// Thin, elegant progress bar with an animated highlight that sweeps across
 /// the filled portion while a download is transferring.
+///
+/// Fills with the neon [ZonPalette.glow]; [muted] drops to grey for transfers
+/// that are parked (paused, queued, failed).
 class ZonProgressBar extends StatefulWidget {
   const ZonProgressBar({
     super.key,
@@ -11,6 +14,7 @@ class ZonProgressBar extends StatefulWidget {
     this.height = 4,
     this.active = false,
     this.radius,
+    this.muted = false,
   });
 
   /// 0.0 – 1.0
@@ -18,6 +22,7 @@ class ZonProgressBar extends StatefulWidget {
   final double height;
   final bool active;
   final double? radius;
+  final bool muted;
 
   @override
   State<ZonProgressBar> createState() => _ZonProgressBarState();
@@ -56,6 +61,7 @@ class _ZonProgressBarState extends State<ZonProgressBar>
   Widget build(BuildContext context) {
     final palette = context.palette;
     final radius = widget.radius ?? widget.height / 2;
+    final fill = widget.muted ? palette.textMuted : palette.glow;
 
     return TweenAnimationBuilder<double>(
       tween: Tween<double>(begin: 0, end: widget.value.clamp(0.0, 1.0)),
@@ -69,20 +75,26 @@ class _ZonProgressBarState extends State<ZonProgressBar>
             color: palette.track,
             borderRadius: BorderRadius.circular(radius),
           ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(radius),
-            child: FractionallySizedBox(
-              alignment: Alignment.centerLeft,
-              widthFactor: value <= 0.001 ? 0.001 : value,
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      palette.textPrimary.withValues(alpha: 0.7),
-                      palette.textPrimary,
-                    ],
-                  ),
+          child: FractionallySizedBox(
+            alignment: Alignment.centerLeft,
+            widthFactor: value <= 0.001 ? 0.001 : value,
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(radius),
+                gradient: LinearGradient(
+                  colors: [fill.withValues(alpha: 0.55), fill],
                 ),
+                boxShadow: widget.muted
+                    ? null
+                    : [
+                        BoxShadow(
+                          color: fill.withValues(alpha: 0.45),
+                          blurRadius: widget.height * 2.5,
+                        ),
+                      ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(radius),
                 child: widget.active
                     ? LayoutBuilder(
                         builder: (context, constraints) {

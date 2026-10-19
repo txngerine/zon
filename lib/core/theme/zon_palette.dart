@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 
 /// Semantic color system for ZON.
 ///
-/// The application is intentionally monochrome: blacks, whites and greys only.
-/// Every widget reads its colors from [ZonPalette] so the light and dark
+/// Text and controls are monochrome: blacks, whites and greys. The one hue is
+/// [glow], a neon green reserved for live data (graphs, progress, connection
+/// meters) so the interface stays quiet everywhere else. Every widget reads its colors from [ZonPalette] so the light and dark
 /// appearance modes can be swapped without touching component code.
 @immutable
 class ZonPalette extends ThemeExtension<ZonPalette> {
@@ -25,6 +26,7 @@ class ZonPalette extends ThemeExtension<ZonPalette> {
     required this.hover,
     required this.scrim,
     required this.shadow,
+    required this.glow,
   });
 
   /// Deepest application background.
@@ -73,24 +75,29 @@ class ZonPalette extends ThemeExtension<ZonPalette> {
   /// Soft shadow color.
   final Color shadow;
 
+  /// Neon accent for live data: graphs, progress fills, meters.
+  final Color glow;
+
+  /// AMOLED: true-black canvas, floating near-black panels, white text.
   static const dark = ZonPalette(
-    background: Color(0xFF050505),
-    backgroundElevated: Color(0xFF0A0A0A),
-    backgroundRaised: Color(0xFF111111),
-    surface: Color(0xFF151515),
-    surfaceHigh: Color(0xFF1A1A1A),
-    surfaceHighest: Color(0xFF202020),
-    border: Color(0xFF2A2A2A),
-    borderStrong: Color(0xFF3A3A3A),
+    background: Color(0xFF000000),
+    backgroundElevated: Color(0xFF060606),
+    backgroundRaised: Color(0xFF060606),
+    surface: Color(0xFF0C0C0C),
+    surfaceHigh: Color(0xFF141414),
+    surfaceHighest: Color(0xFF1C1C1C),
+    border: Color(0xFF1C1C1C),
+    borderStrong: Color(0xFF2C2C2C),
     textPrimary: Color(0xFFFFFFFF),
-    textSecondary: Color(0xFFA1A1A1),
-    textMuted: Color(0xFF666666),
-    track: Color(0xFF252525),
+    textSecondary: Color(0xFFD6D6D6),
+    textMuted: Color(0xFF8C8C8C),
+    track: Color(0xFF1E1E1E),
     accent: Color(0xFFFFFFFF),
-    onAccent: Color(0xFF050505),
+    onAccent: Color(0xFF000000),
     hover: Color(0x0FFFFFFF),
-    scrim: Color(0xB3000000),
-    shadow: Color(0x66000000),
+    scrim: Color(0xCC000000),
+    shadow: Color(0x99000000),
+    glow: Color(0xFF2ECF9F),
   );
 
   static const light = ZonPalette(
@@ -111,6 +118,7 @@ class ZonPalette extends ThemeExtension<ZonPalette> {
     hover: Color(0x0A000000),
     scrim: Color(0x59000000),
     shadow: Color(0x1A000000),
+    glow: Color(0xFF00896A),
   );
 
   @override
@@ -132,6 +140,7 @@ class ZonPalette extends ThemeExtension<ZonPalette> {
     Color? hover,
     Color? scrim,
     Color? shadow,
+    Color? glow,
   }) {
     return ZonPalette(
       background: background ?? this.background,
@@ -151,6 +160,7 @@ class ZonPalette extends ThemeExtension<ZonPalette> {
       hover: hover ?? this.hover,
       scrim: scrim ?? this.scrim,
       shadow: shadow ?? this.shadow,
+      glow: glow ?? this.glow,
     );
   }
 
@@ -183,6 +193,7 @@ class ZonPalette extends ThemeExtension<ZonPalette> {
       hover: Color.lerp(hover, other.hover, t)!,
       scrim: Color.lerp(scrim, other.scrim, t)!,
       shadow: Color.lerp(shadow, other.shadow, t)!,
+      glow: Color.lerp(glow, other.glow, t)!,
     );
   }
 }

@@ -27,17 +27,22 @@ class AddDownloadDialog extends StatefulWidget {
     required this.state,
     this.mode = AddDownloadMode.single,
     this.initialUrl = '',
+    this.initialTorrentFile,
   });
 
   final AppState state;
   final AddDownloadMode mode;
   final String initialUrl;
 
+  /// A local `.torrent` to preselect, e.g. one opened from Finder.
+  final String? initialTorrentFile;
+
   static Future<void> show(
     BuildContext context, {
     required AppState state,
     AddDownloadMode mode = AddDownloadMode.single,
     String initialUrl = '',
+    String? initialTorrentFile,
   }) {
     final palette =
         Theme.of(context).extension<ZonPalette>() ?? ZonPalette.dark;
@@ -47,8 +52,12 @@ class AddDownloadDialog extends StatefulWidget {
       barrierLabel: 'Add download',
       barrierColor: palette.scrim,
       transitionDuration: const Duration(milliseconds: 220),
-      pageBuilder: (context, _, _) =>
-          AddDownloadDialog(state: state, mode: mode, initialUrl: initialUrl),
+      pageBuilder: (context, _, _) => AddDownloadDialog(
+        state: state,
+        mode: mode,
+        initialUrl: initialUrl,
+        initialTorrentFile: initialTorrentFile,
+      ),
       transitionBuilder: (context, animation, secondary, child) {
         final curved = CurvedAnimation(
           parent: animation,
@@ -106,6 +115,7 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
   void initState() {
     super.initState();
     _url = TextEditingController(text: widget.initialUrl);
+    _torrentFile = widget.initialTorrentFile;
     _savePath.text = state.settings.defaultLocation;
     _connections = state.settings.defaultConnections.toDouble();
     _speedLimit = 'No Limit';

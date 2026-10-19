@@ -346,6 +346,18 @@ void main() {
       expect(state.takeClipboardLink('not a link'), isNull);
       expect(state.takeClipboardLink('https://a.com/x y'), isNull);
     });
+
+    test('OS-opened magnets wait for the Add dialog', () async {
+      const magnet = 'magnet:?xt=urn:btih:abcdef&dn=demo';
+      final before = state.downloads.length;
+      state.promptForTorrents = true;
+
+      await state.addIncoming(magnet);
+
+      expect(state.downloads.length, before);
+      expect(state.takeTorrentPrompt(), magnet);
+      expect(state.takeTorrentPrompt(), isNull);
+    });
   });
 
   group('LibraryStore', () {

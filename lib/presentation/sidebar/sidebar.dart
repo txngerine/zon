@@ -28,9 +28,12 @@ class Sidebar extends StatelessWidget {
 
     return Container(
       width: collapsed ? 76 : 240,
+      margin: const EdgeInsets.fromLTRB(12, 12, 0, 0),
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: palette.backgroundElevated,
-        border: Border(right: BorderSide(color: palette.border)),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: palette.border),
       ),
       // Scrolls instead of overflowing when the window is short.
       child: LayoutBuilder(
@@ -197,8 +200,11 @@ class _VersionDot extends StatelessWidget {
       width: 7,
       height: 7,
       decoration: BoxDecoration(
-        color: palette.textPrimary.withValues(alpha: 0.7),
+        color: palette.glow,
         shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(color: palette.glow.withValues(alpha: 0.6), blurRadius: 6),
+        ],
       ),
     );
   }

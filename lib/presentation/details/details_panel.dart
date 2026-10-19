@@ -12,7 +12,6 @@ import '../../core/widgets/status_chip.dart';
 import '../../data/app_state.dart';
 import '../../domain/models/download.dart';
 import '../dashboard/download_card.dart';
-import '../dashboard/speed_panel.dart';
 
 /// Right-hand details panel: full statistics, advanced metadata, transfer
 /// graph and controls for the selected download.
@@ -35,9 +34,12 @@ class DetailsPanel extends StatelessWidget {
 
     return Container(
       width: 340,
+      margin: const EdgeInsets.fromLTRB(0, 12, 12, 0),
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: palette.backgroundRaised,
-        border: Border(left: BorderSide(color: palette.border)),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: palette.border),
       ),
       child: item == null
           ? const Center(
@@ -155,6 +157,12 @@ class DetailsView extends StatelessWidget {
           ZonProgressBar(
             value: item.progress,
             active: item.status == DownloadStatus.downloading,
+            muted: switch (item.status) {
+              DownloadStatus.downloading ||
+              DownloadStatus.verifying ||
+              DownloadStatus.completed => false,
+              _ => true,
+            },
             height: 6,
           ),
           const SizedBox(height: 10),
@@ -180,6 +188,15 @@ class DetailsView extends StatelessWidget {
                 ),
             ],
           ),
+          if (!item.isMedia && !item.isTorrent) ...[
+            const SizedBox(height: 24),
+            Text('CONNECTIONS', style: AppType.eyebrow(palette.textMuted)),
+            const SizedBox(height: 12),
+            _ConnectionMeter(
+              count: item.connections,
+              live: item.status == DownloadStatus.downloading,
+            ),
+          ],
           const SizedBox(height: 26),
           Text('STATISTICS', style: AppType.eyebrow(palette.textMuted)),
           const SizedBox(height: 12),
@@ -216,7 +233,7 @@ class DetailsView extends StatelessWidget {
           const SizedBox(height: 22),
           Text('TRANSFER RATE', style: AppType.eyebrow(palette.textMuted)),
           const SizedBox(height: 12),
-          MiniSpeedGraph(state: state, height: 66),
+          _SpeedBars(samples: state.speedSamples, height: 48),
           const SizedBox(height: 6),
           Row(
             children: [
@@ -434,4 +451,149 @@ class _StatRow extends StatelessWidget {
       ),
     );
   }
+}
+
+/// "16" beside a grid of connection slots, lit in the glow color while the
+/// transfer is running.
+class _ConnectionMeter extends StatelessWidget {
+  const _ConnectionMeter({required this.count, required this.live});
+
+  final int count;
+  final bool live;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final slots = count <= 16 ? 16 : 32;
+    final perRow = slots ~/ 2;
+
+    Widget cell(int index) {
+      final lit = live && index < count;
+      final configured = index < count;
+      return Container(
+        width: 7,
+        height: 12,
+        margin: const EdgeInsets.only(left: 4),
+        decoration: BoxDecoration(
+          color: lit
+              ? palette.glow
+              : configured
+              ? palette.textMuted.withValues(alpha: 0.45)
+              : palette.track,
+          borderRadius: BorderRadius.circular(2),
+          boxShadow: lit
+              ? [
+                  BoxShadow(
+                    color: palette.glow.withValues(alpha: 0.5),
+                    blurRadius: 6,
+                  ),
+                ]
+              : null,
+        ),
+      );
+    }
+
+    return Row(
+      children: [
+        Text.rich(
+          TextSpan(
+            children: [
+              TextSpan(text: live ? '$count' : '0'),
+              TextSpan(
+                text: ' / $count',
+                style: TextStyle(color: palette.textMuted),
+              ),
+            ],
+          ),
+          style: AppType.numeric(
+            palette.textPrimary,
+            size: 17,
+            weight: FontWeight.w600,
+          ),
+        ),
+        const Spacer(),
+        Column(
+          children: [
+            for (var row = 0; row < 2; row++)
+              Padding(
+                padding: EdgeInsets.only(top: row == 0 ? 0 : 5),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (var i = 0; i < perRow; i++) cell(row * perRow + i),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// Recent throughput as a strip of glowing bars.
+class _SpeedBars extends StatelessWidget {
+  const _SpeedBars({required this.samples, this.height = 44});
+
+  final List<double> samples;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      size: Size(double.infinity, height),
+      painter: _SpeedBarsPainter(
+        samples: samples,
+        bar: context.palette.glow,
+        track: context.palette.track,
+      ),
+    );
+  }
+}
+
+class _SpeedBarsPainter extends CustomPainter {
+  _SpeedBarsPainter({
+    required this.samples,
+    required this.bar,
+    required this.track,
+  });
+
+  final List<double> samples;
+  final Color bar;
+  final Color track;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const gap = 3.0;
+    const width = 3.0;
+    final count = ((size.width + gap) / (width + gap)).floor();
+    if (count <= 0) return;
+    final recent = samples.length > count
+        ? samples.sublist(samples.length - count)
+        : samples;
+    final peak = recent.fold<double>(1024, (a, b) => b > a ? b : a);
+    final offset = count - recent.length;
+
+    for (var i = 0; i < count; i++) {
+      final x = i * (width + gap);
+      final sample = i < offset ? 0.0 : recent[i - offset];
+      final h = sample <= 0 ? 2.0 : (sample / peak) * size.height;
+      final rect = RRect.fromRectAndRadius(
+        Rect.fromLTWH(x, size.height - h, width, h),
+        const Radius.circular(1.5),
+      );
+      // Fade the older bars so the strip reads left-to-right as time.
+      final age = 0.35 + 0.65 * (i / count);
+      canvas.drawRRect(
+        rect,
+        Paint()..color = sample <= 0 ? track : bar.withValues(alpha: age),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_SpeedBarsPainter oldDelegate) =>
+      oldDelegate.samples != samples ||
+      oldDelegate.bar != bar ||
+      oldDelegate.track != track;
 }

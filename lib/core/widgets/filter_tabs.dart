@@ -83,7 +83,7 @@ class _TabState<T> extends State<_Tab<T>> {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final foreground = widget.isActive
-        ? palette.textPrimary
+        ? palette.onAccent
         : _hovered
         ? palette.textSecondary
         : palette.textMuted;
@@ -101,14 +101,11 @@ class _TabState<T> extends State<_Tab<T>> {
           padding: const EdgeInsets.symmetric(horizontal: 13),
           decoration: BoxDecoration(
             color: widget.isActive
-                ? palette.surfaceHighest
+                ? palette.accent
                 : _hovered
                 ? palette.hover
                 : Colors.transparent,
             borderRadius: BorderRadius.circular(8),
-            border: widget.isActive
-                ? Border.all(color: palette.textPrimary.withValues(alpha: 0.12))
-                : null,
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,

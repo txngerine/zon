@@ -61,7 +61,7 @@ class _DownloadCardState extends State<DownloadCard> {
     return ZonCard(
       selected: widget.selected,
       onTap: widget.onTap,
-      padding: EdgeInsets.all(widget.compact ? 12 : 16),
+      padding: EdgeInsets.all(widget.compact ? 12 : 14),
       child: MouseRegion(
         onEnter: (_) => setState(() => _hovered = true),
         onExit: (_) => setState(() => _hovered = false),
@@ -75,81 +75,155 @@ class _DownloadCardState extends State<DownloadCard> {
   // --------------------------------------------------------------------------
 
   Widget _fullLayout(ZonPalette palette) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    final (headline, caption) = _summary();
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Phones: the summary column folds into the detail line.
+        final narrow = constraints.maxWidth < 520;
+        return _fullRow(palette, headline, caption, narrow);
+      },
+    );
+  }
+
+  Widget _fullRow(
+    ZonPalette palette,
+    String headline,
+    String caption,
+    bool narrow,
+  ) {
+    return Row(
       children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            FileGlyph(
-              fileName: item.fileName,
-              thumbnailUrl: item.thumbnailUrl,
-              icon: item.isTorrent ? Icons.hub_outlined : null,
-              size: 46,
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      final chipFits = constraints.maxWidth >= 300;
-                      if (!chipFits) {
-                        return Text(
-                          item.fileName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppType.body(
-                            palette.textPrimary,
-                            size: 14,
-                            weight: FontWeight.w600,
-                          ),
-                        );
-                      }
-                      return Row(
-                        children: [
-                          Flexible(
-                            child: Text(
-                              item.fileName,
-                              overflow: TextOverflow.ellipsis,
-                              style: AppType.body(
-                                palette.textPrimary,
-                                size: 14,
-                                weight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          StatusChip(status: item.status),
-                        ],
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 8),
-                  _MetaLine(item: item, hovered: _hovered),
-                ],
+        FileGlyph(
+          fileName: item.fileName,
+          thumbnailUrl: item.thumbnailUrl,
+          icon: item.isTorrent ? Icons.hub_outlined : null,
+          size: narrow ? 40 : 48,
+        ),
+        SizedBox(width: narrow ? 12 : 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                item.fileName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppType.body(
+                  palette.textPrimary,
+                  size: 14,
+                  weight: FontWeight.w600,
+                ),
               ),
-            ),
-            const SizedBox(width: 16),
-            _Actions(
-              item: item,
-              showDetails: widget.showDetailsAction,
-              onAction: widget.onAction,
-            ),
-          ],
+              const SizedBox(height: 4),
+              Text(
+                '${item.source}  •  ${sizeLabel(item)}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppType.body(palette.textMuted, size: 12),
+              ),
+              const SizedBox(height: 10),
+              ZonProgressBar(
+                value: item.progress,
+                active: item.status == DownloadStatus.downloading,
+                muted: _parked,
+                height: 4,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                narrow ? '$headline  •  ${_detail()}' : _detail(),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppType.numeric(
+                  _hovered || item.status == DownloadStatus.failed
+                      ? palette.textPrimary
+                      : palette.textSecondary,
+                  size: 12,
+                ),
+              ),
+            ],
+          ),
         ),
-        const SizedBox(height: 14),
-        ZonProgressBar(
-          value: item.progress,
-          active: item.status == DownloadStatus.downloading,
-          height: 4,
+        if (!narrow) ...[
+          const SizedBox(width: 24),
+          SizedBox(
+            width: 104,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  headline,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppType.numeric(
+                    palette.textPrimary,
+                    size: 15,
+                    weight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  caption,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppType.numeric(palette.textSecondary, size: 12),
+                ),
+              ],
+            ),
+          ),
+        ],
+        const SizedBox(width: 12),
+        _Actions(
+          item: item,
+          showDetails: widget.showDetailsAction,
+          onAction: widget.onAction,
         ),
-        const SizedBox(height: 12),
-        _StatsRow(item: item),
       ],
     );
   }
+
+  /// Parked transfers draw a grey bar instead of the live glow.
+  bool get _parked => switch (item.status) {
+    DownloadStatus.downloading ||
+    DownloadStatus.verifying ||
+    DownloadStatus.completed => false,
+    _ => true,
+  };
+
+  /// Right-hand column: what the transfer is doing, then the key number.
+  (String, String) _summary() {
+    final percent = formatPercent(item.progress);
+    return switch (item.status) {
+      DownloadStatus.downloading => (percent, formatSpeed(item.speed)),
+      DownloadStatus.completed => ('Completed', sizeLabel(item)),
+      DownloadStatus.queued => ('Queued', 'Waiting…'),
+      DownloadStatus.paused => ('Paused', _transferred()),
+      DownloadStatus.failed => ('Failed', percent),
+      DownloadStatus.cancelled => ('Cancelled', percent),
+      DownloadStatus.verifying => (percent, item.phase ?? 'Processing'),
+    };
+  }
+
+  /// Line under the progress bar.
+  String _detail() {
+    final eta = item.etaSeconds;
+    return switch (item.status) {
+      DownloadStatus.downloading => [
+        _transferred(),
+        if (eta != null) 'ETA ${formatEta(eta)}',
+        transferLabel(item),
+      ].join('  •  '),
+      DownloadStatus.verifying => item.phase ?? 'Processing',
+      DownloadStatus.completed => 'Saved to ${item.savePath}',
+      DownloadStatus.queued => '${item.priority.label} priority',
+      DownloadStatus.paused => 'Paused at ${formatPercent(item.progress)}',
+      DownloadStatus.failed => item.failureReason ?? 'Transfer failed',
+      DownloadStatus.cancelled => 'Cancelled by user',
+    };
+  }
+
+  String _transferred() => item.sizeBytes > 0
+      ? '${formatBytes(item.downloadedBytes)} / ${formatBytes(item.sizeBytes)}'
+      : formatBytes(item.downloadedBytes);
 
   // --------------------------------------------------------------------------
   // Compact row
@@ -223,6 +297,7 @@ class _DownloadCardState extends State<DownloadCard> {
                     ZonProgressBar(
                       value: item.progress,
                       active: item.status == DownloadStatus.downloading,
+                      muted: _parked,
                       height: 3,
                     ),
                   ],
@@ -286,161 +361,6 @@ String transferLabel(DownloadItem item) {
   return '${item.connections} connection${item.connections == 1 ? '' : 's'}';
 }
 
-class _MetaLine extends StatelessWidget {
-  const _MetaLine({required this.item, required this.hovered});
-
-  final DownloadItem item;
-  final bool hovered;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-
-    final String lead;
-    switch (item.status) {
-      case DownloadStatus.failed:
-        lead = item.failureReason ?? 'Transfer failed';
-      case DownloadStatus.verifying:
-        lead = item.phase ?? 'Processing';
-      case DownloadStatus.queued:
-        lead = 'Queued • ${item.priority.label} priority';
-      case DownloadStatus.cancelled:
-        lead = 'Cancelled by user';
-      case DownloadStatus.completed:
-        lead = 'Saved to ${item.savePath}';
-      case DownloadStatus.paused:
-        lead = 'Paused at ${formatPercent(item.progress)}';
-      case DownloadStatus.downloading:
-        lead = transferLabel(item);
-    }
-
-    return Wrap(
-      crossAxisAlignment: WrapCrossAlignment.center,
-      spacing: 10,
-      runSpacing: 6,
-      children: [
-        Text(
-          sizeLabel(item),
-          style: AppType.numeric(palette.textSecondary, size: 12),
-        ),
-        _Dot(color: palette.textMuted),
-        Text(item.source, style: AppType.body(palette.textMuted, size: 12)),
-        _Dot(color: palette.textMuted),
-        Text(
-          lead,
-          style: AppType.body(
-            hovered || item.status == DownloadStatus.failed
-                ? palette.textSecondary
-                : palette.textMuted,
-            size: 12,
-          ),
-        ),
-        if (item.status == DownloadStatus.downloading) ...[
-          _Dot(color: palette.textMuted),
-          Text(
-            formatSpeed(item.speed),
-            style: AppType.numeric(palette.textSecondary, size: 12),
-          ),
-        ],
-      ],
-    );
-  }
-}
-
-class _Dot extends StatelessWidget {
-  const _Dot({required this.color});
-
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 3,
-      height: 3,
-      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-    );
-  }
-}
-
-class _StatsRow extends StatelessWidget {
-  const _StatsRow({required this.item});
-
-  final DownloadItem item;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-
-    final eta = item.etaSeconds;
-    final speed = item.speed;
-
-    final percent = Text(
-      formatPercent(item.progress),
-      style: AppType.numeric(
-        palette.textPrimary,
-        size: 13,
-        weight: FontWeight.w700,
-      ),
-    );
-    final transferred = Text(
-      item.sizeBytes > 0
-          ? '${formatBytes(item.downloadedBytes)} / ${formatBytes(item.sizeBytes)}'
-          : formatBytes(item.downloadedBytes),
-      style: AppType.numeric(palette.textMuted, size: 12),
-    );
-    final speedText = Text(
-      item.status == DownloadStatus.downloading ? formatSpeed(speed) : '—',
-      style: AppType.numeric(palette.textSecondary, size: 12),
-    );
-    final etaText = Text(
-      eta == null ? '—' : '${formatEta(eta)} remaining',
-      style: AppType.numeric(palette.textSecondary, size: 12),
-    );
-    final connections = Text(
-      transferLabel(item),
-      style: AppType.numeric(palette.textMuted, size: 12),
-    );
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        if (constraints.maxWidth > 660) {
-          return Row(
-            children: [
-              percent,
-              const SizedBox(width: 12),
-              transferred,
-              Expanded(
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        speedText,
-                        const SizedBox(width: 18),
-                        etaText,
-                        const SizedBox(width: 18),
-                        connections,
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          );
-        }
-        return Wrap(
-          spacing: 14,
-          runSpacing: 8,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [percent, transferred, speedText, etaText, connections],
-        );
-      },
-    );
-  }
-}
-
 // -----------------------------------------------------------------------------
 
 class _Actions extends StatelessWidget {
@@ -465,8 +385,10 @@ class _Actions extends StatelessWidget {
         buttons.add(
           MonoIconButton(
             icon: Icons.pause_rounded,
+            raised: !compact,
             tooltip: 'Pause',
-            size: compact ? 30 : 34,
+            size: compact ? 30 : 36,
+            circle: !compact,
             onTap: () => onAction(DownloadCardAction.pause, item),
           ),
         );
@@ -475,7 +397,8 @@ class _Actions extends StatelessWidget {
           MonoIconButton(
             icon: Icons.close_rounded,
             tooltip: 'Cancel',
-            size: compact ? 30 : 34,
+            size: compact ? 30 : 36,
+            circle: !compact,
             onTap: () => onAction(DownloadCardAction.cancel, item),
           ),
         );
@@ -485,8 +408,10 @@ class _Actions extends StatelessWidget {
         buttons.add(
           MonoIconButton(
             icon: Icons.play_arrow_rounded,
+            raised: !compact,
             tooltip: 'Resume',
-            size: compact ? 30 : 34,
+            size: compact ? 30 : 36,
+            circle: !compact,
             onTap: () => onAction(DownloadCardAction.resume, item),
           ),
         );
@@ -497,7 +422,8 @@ class _Actions extends StatelessWidget {
             tooltip: item.status == DownloadStatus.failed
                 ? 'Dismiss'
                 : 'Cancel',
-            size: compact ? 30 : 34,
+            size: compact ? 30 : 36,
+            circle: !compact,
             onTap: () => onAction(DownloadCardAction.cancel, item),
           ),
         );
@@ -505,8 +431,10 @@ class _Actions extends StatelessWidget {
         buttons.add(
           MonoIconButton(
             icon: Icons.play_arrow_rounded,
+            raised: !compact,
             tooltip: 'Start now',
-            size: compact ? 30 : 34,
+            size: compact ? 30 : 36,
+            circle: !compact,
             onTap: () => onAction(DownloadCardAction.resume, item),
           ),
         );
@@ -515,7 +443,8 @@ class _Actions extends StatelessWidget {
           MonoIconButton(
             icon: Icons.close_rounded,
             tooltip: 'Remove',
-            size: compact ? 30 : 34,
+            size: compact ? 30 : 36,
+            circle: !compact,
             onTap: () => onAction(DownloadCardAction.cancel, item),
           ),
         );
@@ -524,7 +453,8 @@ class _Actions extends StatelessWidget {
           MonoIconButton(
             icon: Icons.folder_open_rounded,
             tooltip: 'Open folder',
-            size: compact ? 30 : 34,
+            size: compact ? 30 : 36,
+            circle: !compact,
             onTap: () => onAction(DownloadCardAction.openFolder, item),
           ),
         );
@@ -534,7 +464,8 @@ class _Actions extends StatelessWidget {
             MonoIconButton(
               icon: Icons.refresh_rounded,
               tooltip: 'Download again',
-              size: 34,
+              size: 36,
+              circle: true,
               onTap: () => onAction(DownloadCardAction.redownload, item),
             ),
           );
@@ -544,7 +475,8 @@ class _Actions extends StatelessWidget {
           MonoIconButton(
             icon: Icons.folder_open_rounded,
             tooltip: 'Open folder',
-            size: compact ? 30 : 34,
+            size: compact ? 30 : 36,
+            circle: !compact,
             onTap: () => onAction(DownloadCardAction.openFolder, item),
           ),
         );
@@ -556,7 +488,8 @@ class _Actions extends StatelessWidget {
         MonoIconButton(
           icon: Icons.info_outline_rounded,
           tooltip: 'Details',
-          size: 34,
+          size: 36,
+          circle: true,
           onTap: () => onAction(DownloadCardAction.details, item),
         ),
       );

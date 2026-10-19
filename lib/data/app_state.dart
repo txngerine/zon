@@ -177,6 +177,17 @@ class AppState extends ChangeNotifier implements TransferListener {
     }
   }
 
+  /// When true, torrents handed over by the OS wait in [takeTorrentPrompt]
+  /// for the shell to show the Add dialog (save location, files) instead of
+  /// starting straight away. Off for headless use and tests.
+  bool promptForTorrents = false;
+
+  final List<String> _torrentPrompts = [];
+
+  /// Next magnet link or local `.torrent` path awaiting the Add dialog.
+  String? takeTorrentPrompt() =>
+      _torrentPrompts.isEmpty ? null : _torrentPrompts.removeAt(0);
+
   /// Adds a link handed over by the OS (magnet click, "Open with" a
   /// `.torrent`, or a second launch).
   Future<void> addIncoming(String link) async {
@@ -185,6 +196,12 @@ class AppState extends ChangeNotifier implements TransferListener {
         value.toLowerCase().endsWith('.torrent') &&
         !value.contains('://') &&
         await File(value).exists();
+    if (promptForTorrents && (isLocalTorrent || isTorrentLink(value))) {
+      _section = AppSection.all;
+      _torrentPrompts.add(value);
+      notifyListeners();
+      return;
+    }
     if (isLocalTorrent) {
       _section = AppSection.all;
       await addTorrentFile(value);
