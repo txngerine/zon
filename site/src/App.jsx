@@ -302,7 +302,7 @@ function Hero({ platform }) {
       <div className="hero-inner">
         <a className="pill" href={RELEASES}>
           <span className="pill-dot" />
-          v1.0 — now with a Windows installer
+          v{__APP_VERSION__} — now with a Windows installer
           <span className="pill-arrow">→</span>
         </a>
         <h1>
