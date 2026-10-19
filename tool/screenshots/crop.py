@@ -35,11 +35,42 @@ def main() -> None:
         print(f"{name}.webp {image.width}x{image.height}")
 
 
+# The Z mark, in the 248-unit space of site/public/logo.svg (keep in sync).
+BRAND = "#00674f"
+
+
+def logo(size: int, radius: float = 0) -> Image.Image:
+    """Renders the logo at `size` px; `radius` rounds the square (logo units)."""
+    k = size * 4 / 248  # 4x supersampling
+
+    def p(v: float) -> float:
+        return v * k
+
+    image = Image.new("RGBA", (size * 4, size * 4), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    draw.rounded_rectangle((0, 0, size * 4 - 1, size * 4 - 1), p(radius), BRAND)
+    width = 50.5
+    joints = [(77.5, 74), (171, 74), (78.5, 171)]
+    for a, b in zip(joints, joints[1:]):
+        draw.line([(p(a[0]), p(a[1])), (p(b[0]), p(b[1]))], "#000", round(p(width)))
+    for x, y in joints:
+        r = width / 2
+        draw.ellipse((p(x - r), p(y - r), p(x + r), p(y + r)), "#000")
+    draw.ellipse((p(169 - 25), p(169 - 25), p(169 + 25), p(169 + 25)), "#000")
+    return image.resize((size, size), Image.LANCZOS)
+
+
+def icons() -> None:
+    logo(512, radius=56).save("site/public/favicon.png", optimize=True)
+    logo(180).save("site/public/apple-touch-icon.png", optimize=True)
+    print("favicon.png 512, apple-touch-icon.png 180")
+
+
 def og_image() -> None:
     """1200x630 social card: headline on the left, the app bleeding off the right."""
     card = Image.new("RGB", (1200, 630), "#000")
     glow = Image.new("RGB", (1200, 630), "#000")
-    ImageDraw.Draw(glow).ellipse((300, -420, 1300, 380), fill="#0f3a28")
+    ImageDraw.Draw(glow).ellipse((300, -420, 1300, 380), fill="#00422f")
     card = Image.blend(card, glow.filter(ImageFilter.GaussianBlur(120)), 1)
 
     shot = Image.open(SRC / "dashboard-dark.png").convert("RGB")
@@ -56,7 +87,7 @@ def og_image() -> None:
     label = ImageFont.truetype(sf, 20)
     label.set_variation_by_name("Semibold")
 
-    icon = Image.open("assets/brand/zon_icon.png").convert("RGBA").resize((56, 56))
+    icon = logo(56, radius=56)
     card.paste(icon, (64, 64), icon)
     draw.text((136, 78), "Z O N", font=label, fill="#ffffff")
     draw.text((64, 190), "Every download.", font=bold, fill="#ffffff")
@@ -68,11 +99,12 @@ def og_image() -> None:
         fill="#b4b4b4",
         spacing=10,
     )
-    draw.text((64, 540), "zon.vercel.app", font=label, fill="#3ddc97")
+    draw.text((64, 540), "zon.vercel.app", font=label, fill="#2ecf9f")
     card.save("site/public/og.png", optimize=True)
     print("og.png 1200x630")
 
 
 if __name__ == "__main__":
     main()
+    icons()
     og_image()

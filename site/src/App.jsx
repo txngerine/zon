@@ -269,7 +269,7 @@ function Nav() {
     <header className="nav-wrap">
       <div className="nav">
         <a className="brand" href="#top">
-          <img src="./favicon.png" alt="" width="24" height="24" />
+          <img src="./logo.svg" alt="" width="26" height="26" />
           <span>ZON</span>
         </a>
         <nav>
@@ -722,7 +722,7 @@ function Faq() {
 function Cta({ platform }) {
   return (
     <section className="cta reveal">
-      <img src="./favicon.png" alt="" width="72" height="72" />
+      <img src="./logo.svg" alt="" width="80" height="80" />
       <h2>Stop babysitting downloads.</h2>
       <p>Free, open source, and it picks up exactly where it left off.</p>
       <a className="btn btn-solid btn-lg" href={RELEASES}>
@@ -737,7 +737,7 @@ function Footer() {
   return (
     <footer className="footer">
       <div className="footer-brand">
-        <img src="./favicon.png" alt="" width="20" height="20" />
+        <img src="./logo.svg" alt="" width="20" height="20" />
         <span>ZON</span>
       </div>
       <p className="footer-legal">
