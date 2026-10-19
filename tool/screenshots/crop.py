@@ -14,11 +14,12 @@ OUT = Path("site/public/shots")
 SHOTS = {
     "dashboard-dark": ("dashboard-dark", None, 2400),
     "dashboard-light": ("dashboard-light", None, 2400),
-    "speed": ("dashboard-dark", (548, 345, 2131, 624), 1400),
-    "torrent": ("torrent", (2200, 0, 2880, 1665), 680),
+    "speed": ("dashboard-dark", (560, 335, 2120, 635), 1400),
+    "torrent": ("torrent", (2170, 180, 2866, 1410), 696),
+    "torrent-files": ("torrent-dialog", (862, 80, 2018, 1440), 1156),
     "media": ("media-dialog", (862, 80, 2018, 1510), 1156),
-    "history": ("history", (480, 0, 2200, 1700), 1400),
-    "settings": ("settings", (480, 0, 2200, 1700), 1400),
+    "history": ("history", (0, 0, 2160, 1716), 1400),
+    "settings": ("settings", (0, 0, 2160, 1716), 1400),
 }
 
 

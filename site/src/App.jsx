@@ -180,6 +180,12 @@ const ICONS = {
       <path d="m7 9 3 3-3 3m5 0h5" />
     </>
   ),
+  gauge: (
+    <>
+      <path d="M4 18a8 8 0 1 1 16 0" />
+      <path d="m12 18 4-6M4 18h16" />
+    </>
+  ),
   check: <path d="m5 12 5 5 9-10" />,
   plus: <path d="M12 5v14M5 12h14" />,
   github: (
@@ -456,9 +462,9 @@ function Features() {
         <div className="feature-media">
           <Panel
             src="./shots/speed.webp"
-            alt="ZON's download speed panel: 39.3 MB/s live, 50.8 MB/s peak, 40.9 MB/s average"
+            alt="ZON's download speed panel: a glowing live graph at 39.3 MB/s, 50.8 MB/s peak, 40.9 MB/s average"
             width="1400"
-            height="247"
+            height="269"
           />
           <Segments />
         </div>
@@ -501,24 +507,54 @@ function Features() {
           <p>
             Magnet links and .torrent files — from a URL, the file picker, drag
             &amp; drop or Finder's “Open With” — run through a private aria2
-            daemon. Watch peers, seeds and upload live, and seed back to a ratio
-            if you like.
+            daemon. ZON reads the file list first, so you take only the files
+            you want.
           </p>
           <Bullets
             items={[
+              'Pick files and folders before downloading',
               'Pause and resume with piece verification',
-              'Stalled torrents free their download slot',
               'Optional system handler for magnet links',
+            ]}
+          />
+        </div>
+        <div className="feature-media">
+          <Panel
+            className="panel-tall panel-glow"
+            src="./shots/torrent-files.webp"
+            alt="The Add Torrent dialog listing a magnet link's files in folders, with checkboxes and quick filters for All, None, Videos only and Skip extras"
+            width="1156"
+            height="1360"
+          />
+        </div>
+      </article>
+
+      <article className="feature feature-flip reveal">
+        <div className="feature-text">
+          <span className="feature-tag">
+            <Icon name="gauge" size={16} /> Details panel
+          </span>
+          <h3>Every transfer, at a glance.</h3>
+          <p>
+            Select a download to see it up close: live speed bars, a meter for
+            every connection or peer, the time left, and the server, type and
+            resume support behind it.
+          </p>
+          <Bullets
+            items={[
+              'Live speed and per-connection meters',
+              'Peers, seeds and upload for torrents',
+              'Pause, open, copy the link or delete in one click',
             ]}
           />
         </div>
         <div className="feature-media feature-media-narrow">
           <Panel
-            className="panel-tall"
+            className="panel-glow"
             src="./shots/torrent.webp"
-            alt="The details panel for an Arch Linux torrent at 86%: 48 peers, 212 seeds, 940 KB/s upload"
-            width="680"
-            height="1665"
+            alt="The details panel for an Arch Linux torrent at 86.1%: 5.1 MB/s with live speed bars and a meter showing 32 of 32 peers"
+            width="696"
+            height="1230"
           />
         </div>
       </article>
@@ -529,7 +565,7 @@ function Features() {
             src="./shots/history.webp"
             alt="ZON's history screen listing completed, failed and cancelled downloads with filters and search"
             width="1400"
-            height="1384"
+            height="1112"
           />
           <figcaption>
             <Icon name="history" size={16} />
@@ -544,7 +580,7 @@ function Features() {
             src="./shots/settings.webp"
             alt="ZON's settings: download location, startup and tray options, simultaneous downloads, connections per download, speed limit and retries"
             width="1400"
-            height="1384"
+            height="1112"
           />
           <figcaption>
             <Icon name="queue" size={16} />

@@ -22,6 +22,8 @@ import 'package:zon/domain/models/download.dart';
 import 'package:zon/domain/models/media_format.dart';
 import 'package:zon/domain/models/ui_state.dart';
 import 'package:zon/engine/media/ytdlp.dart';
+import 'package:zon/engine/torrent/torrent_engine.dart';
+import 'package:zon/engine/torrent/torrent_manifest.dart';
 import 'package:zon/presentation/dialogs/add_download_dialog.dart';
 import 'package:zon/presentation/shell/zon_shell.dart';
 
@@ -400,6 +402,40 @@ class _FakeTools implements MediaTools {
   dynamic noSuchMethod(Invocation invocation) => null;
 }
 
+/// Answers the Add Torrent dialog's file list without starting aria2.
+class _DemoTorrents extends TorrentEngine {
+  _DemoTorrents() : super(tools: _FakeTools(), stateDir: '');
+
+  @override
+  Future<TorrentManifest> inspect(
+    String url, {
+    void Function(int peers)? onPeers,
+  }) async {
+    TorrentFileEntry file(int index, List<String> path, int size) =>
+        TorrentFileEntry(index: index, segments: path, length: size);
+    const dir = 'Blender Open Movies';
+    return TorrentManifest(
+      name: dir,
+      files: [
+        file(1, [
+          dir,
+          'Big Buck Bunny',
+          'big_buck_bunny_2160p.mp4',
+        ], 1268 * _mb),
+        file(2, [dir, 'Big Buck Bunny', 'big_buck_bunny.en.srt'], 18 * 1024),
+        file(3, [dir, 'Sintel', 'sintel_1080p.mkv'], 1490 * _mb),
+        file(4, [dir, 'Sintel', 'sintel.en.srt'], 22 * 1024),
+        file(5, [dir, 'Tears of Steel', 'tears_of_steel_1080p.mov'], 734 * _mb),
+        file(6, [dir, 'Spring', 'spring_4k.mp4'], 2100 * _mb),
+        file(7, [dir, 'README.txt'], 3 * 1024),
+      ],
+    );
+  }
+
+  @override
+  Future<void> cancelInspect(String url) async {}
+}
+
 /// Feeds the speed graph with a believable, wobbly history.
 void _warmUp(AppState state) {
   final rng = Random(7);
@@ -444,6 +480,7 @@ void main() {
     Size size = const Size(1440, 900),
     ThemePreference theme = ThemePreference.dark,
     String? select,
+    TorrentEngine? torrents,
   }) async {
     tester.view.physicalSize = size * 2;
     tester.view.devicePixelRatio = 2;
@@ -454,6 +491,7 @@ void main() {
       history: _demoHistory(),
       settings: AppSettings.defaults.copyWith(theme: theme, maxSimultaneous: 3),
       mediaTools: _FakeTools(),
+      torrentEngine: torrents,
     );
     // Tests swap shadows for flat bands by default; draw the real ones.
     debugDisableShadows = false;
@@ -558,6 +596,28 @@ void main() {
     );
     await settle(tester);
     await capture(tester, 'media-dialog');
+    await finish(tester);
+  });
+
+  shot('torrent dialog', (tester) async {
+    final state = await pump(tester, select: 'd3', torrents: _DemoTorrents());
+    unawaited(
+      AddDownloadDialog.show(
+        tester.element(find.byType(ZonShell)),
+        state: state,
+        mode: AddDownloadMode.torrent,
+        initialUrl: 'magnet:?xt=urn:btih:3b245504cf5f11bbdbe1201cea6a6bf45aee1bc0&dn=Blender+Open+Movies',
+      ),
+    );
+    await settle(tester);
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(seconds: 1)),
+    );
+    await settle(tester);
+    // Show a partial pick: the subtitles and README unticked.
+    await tester.tap(find.text('Skip extras'));
+    await settle(tester);
+    await capture(tester, 'torrent-dialog');
     await finish(tester);
   });
 }
