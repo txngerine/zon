@@ -50,6 +50,27 @@ IconData fileIconFor(String fileName) {
   return Icons.insert_drive_file_outlined;
 }
 
+/// Friendly file type for the details panel ("Disk Image", "Archive").
+String fileTypeLabel(String fileName) {
+  final dot = fileName.lastIndexOf('.');
+  final ext = dot < 0 ? '' : fileName.substring(dot + 1).toLowerCase();
+  return switch (ext) {
+    'dmg' || 'iso' || 'img' => 'Disk Image',
+    'zip' || 'rar' || '7z' || 'tar' || 'gz' || 'xz' || 'bz2' => 'Archive',
+    'mp4' || 'mkv' || 'mov' || 'avi' || 'webm' || 'm4v' => 'Video',
+    'mp3' || 'flac' || 'wav' || 'm4a' || 'opus' || 'aac' || 'ogg' => 'Audio',
+    'png' || 'jpg' || 'jpeg' || 'gif' || 'webp' || 'heic' => 'Image',
+    'pdf' => 'PDF Document',
+    'pkg' => 'macOS Installer',
+    'exe' || 'msi' => 'Windows Installer',
+    'deb' || 'rpm' || 'appimage' => 'Linux Package',
+    'apk' => 'Android Package',
+    'torrent' => 'Torrent',
+    '' => 'File',
+    _ => '${ext.toUpperCase()} File',
+  };
+}
+
 /// Rounded-square tile that represents a file inside cards and panels.
 class FileGlyph extends StatelessWidget {
   const FileGlyph({

@@ -160,18 +160,29 @@ void main() {
         find.descendant(of: panel, matching: find.text(target.fileName)),
         findsWidgets,
       );
+      for (final section in [
+        'PROGRESS',
+        'SPEED',
+        'CONNECTIONS',
+        'SAVE TO',
+        'ADDITIONAL INFO',
+      ]) {
+        expect(
+          find.descendant(of: panel, matching: find.text(section)),
+          findsOneWidget,
+        );
+      }
       expect(
-        find.descendant(of: panel, matching: find.text('STATISTICS')),
+        find.descendant(of: panel, matching: find.text('Downloading')),
         findsOneWidget,
       );
-      expect(
-        find.descendant(of: panel, matching: find.text('ADVANCED')),
-        findsOneWidget,
+
+      // Pause lives next to the percentage.
+      await tester.tap(
+        find.descendant(of: panel, matching: find.byTooltip('Pause')),
       );
-      expect(
-        find.descendant(of: panel, matching: find.text('Connections')),
-        findsOneWidget,
-      );
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(state.selected?.status, DownloadStatus.paused);
 
       await finish(tester);
     });

@@ -15,6 +15,7 @@ class ZonProgressBar extends StatefulWidget {
     this.active = false,
     this.radius,
     this.muted = false,
+    this.color,
   });
 
   /// 0.0 – 1.0
@@ -23,6 +24,9 @@ class ZonProgressBar extends StatefulWidget {
   final bool active;
   final double? radius;
   final bool muted;
+
+  /// Fill override (the details panel uses white, as in the design).
+  final Color? color;
 
   @override
   State<ZonProgressBar> createState() => _ZonProgressBarState();
@@ -61,7 +65,9 @@ class _ZonProgressBarState extends State<ZonProgressBar>
   Widget build(BuildContext context) {
     final palette = context.palette;
     final radius = widget.radius ?? widget.height / 2;
-    final fill = widget.muted ? palette.textMuted : palette.glow;
+    final fill = widget.muted
+        ? palette.textMuted
+        : (widget.color ?? palette.glow);
 
     return TweenAnimationBuilder<double>(
       tween: Tween<double>(begin: 0, end: widget.value.clamp(0.0, 1.0)),

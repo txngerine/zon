@@ -293,6 +293,11 @@ class AppState extends ChangeNotifier implements TransferListener {
   double get totalSpeed => _totalSpeed;
   double get peakSpeed => _peakSpeed;
   List<double> get speedSamples => List.unmodifiable(_samples);
+
+  /// Recent speeds of one download, oldest first; empty while it is idle.
+  List<double> speedSamplesFor(String id) =>
+      List.unmodifiable(_itemSamples[id] ?? const <double>[]);
+  final Map<String, List<double>> _itemSamples = {};
   bool get engineRunning => _timer != null;
 
   MediaTools? get mediaTools => _tools;
@@ -852,6 +857,21 @@ class AppState extends ChangeNotifier implements TransferListener {
     _rebalanceLimits();
     _changed();
     showToast(limit == 'No Limit' ? 'Speed limit removed' : 'Limit: $limit');
+  }
+
+  /// Moves a download that has not started yet to another folder.
+  void setSavePath(String id, String path) {
+    final item = _find(id);
+    final folder = path.trim();
+    if (item == null ||
+        folder.isEmpty ||
+        item.status != DownloadStatus.queued ||
+        item.downloadedBytes > 0) {
+      return;
+    }
+    _update(id, (current) => current.copyWith(savePath: folder));
+    _changed();
+    showToast('Saving ${item.fileName} to $folder');
   }
 
   void setPriority(String id, DownloadPriority priority) {
@@ -1417,6 +1437,16 @@ class AppState extends ChangeNotifier implements TransferListener {
     _samples = [..._samples, _totalSpeed];
     if (_samples.length > sampleWindow) {
       _samples = _samples.sublist(_samples.length - sampleWindow);
+    }
+    for (final item in _downloads) {
+      if (item.status != DownloadStatus.downloading) {
+        _itemSamples.remove(item.id);
+        continue;
+      }
+      final history = [...?_itemSamples[item.id], item.speed];
+      _itemSamples[item.id] = history.length > sampleWindow
+          ? history.sublist(history.length - sampleWindow)
+          : history;
     }
     if (_totalSpeed > _peakSpeed) _peakSpeed = _totalSpeed;
 

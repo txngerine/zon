@@ -42,6 +42,9 @@ class ToastOverlayState extends State<ToastOverlay> {
     final toast = widget.state.toast;
     if (toast == null) {
       _timer?.cancel();
+      // Nothing above this widget rebuilds on state changes, so the
+      // dismissal has to repaint it or the last message stays up.
+      setState(() {});
       return;
     }
     if (widget.state.toastToken == _shownToken) return;
