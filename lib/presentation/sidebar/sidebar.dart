@@ -167,8 +167,8 @@ class Sidebar extends StatelessWidget {
                                   alignment: Alignment.centerLeft,
                                   child: Text(
                                     state.activeCount > 0
-                                        ? 'ZON 1.0.0  •  ${state.activeCount} ACTIVE'
-                                        : 'ZON 1.0.0  •  READY',
+                                        ? 'ZON 1.1.0  •  ${state.activeCount} ACTIVE'
+                                        : 'ZON 1.1.0  •  READY',
                                     style: AppType.eyebrow(
                                       palette.textMuted,
                                       size: 8.5,

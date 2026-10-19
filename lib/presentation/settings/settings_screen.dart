@@ -478,7 +478,7 @@ class SettingsScreen extends StatelessWidget {
               const SizedBox(height: 6),
               Center(
                 child: Text(
-                  'ZON 1.0.0  •  HTTP ENGINE READY  •  '
+                  'ZON 1.1.0  •  HTTP ENGINE READY  •  '
                   '${state.mediaTools?.version == null ? 'YT-DLP NOT INSTALLED' : 'YT-DLP ${state.mediaTools!.version}'}',
                   style: AppType.eyebrow(
                     palette.textMuted,
