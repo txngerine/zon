@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 
 const RELEASES = 'https://github.com/txngerine/zon/releases/latest'
 const REPO = 'https://github.com/txngerine/zon'
@@ -10,71 +10,115 @@ const PLATFORMS = [
     detail: 'Apple Silicon',
     file: 'zon-macos-arm64.zip',
     match: /Mac/,
-    icon: 'laptop',
+    icon: 'apple',
+    note: 'Unzip and drag ZON to Applications.',
   },
   {
     id: 'windows',
     name: 'Windows',
-    detail: 'x64',
+    detail: 'x64 · installer',
     file: 'zon-windows-x64-setup.exe',
     match: /Win/,
     icon: 'window',
+    note: 'Per-user install, no admin rights needed.',
   },
   {
     id: 'linux',
     name: 'Linux',
-    detail: 'x64',
+    detail: 'x64 · tarball',
     file: 'zon-linux-x64.tar.gz',
     match: /Linux|X11/,
     icon: 'terminal',
+    note: 'Needs GTK 3 for the tray icon.',
   },
 ]
 
 const SOURCES = [
   'YouTube',
   'Shorts',
-  'Instagram',
+  'Playlists',
+  'Instagram Reels',
   'TikTok',
   'X',
+  'Facebook',
   'Vimeo',
   'SoundCloud',
+  'Twitch',
+  'Reddit',
   'Magnet links',
   '.torrent',
   'HTTP / HTTPS',
-  '1000+ more via yt-dlp',
 ]
 
 const STATS = [
-  { value: '32', label: 'parallel byte ranges per file' },
+  { value: '32', label: 'parallel connections per file' },
   { value: '1000+', label: 'video and audio sites' },
   { value: '3', label: 'desktop platforms' },
   { value: '$0', label: 'free and open source' },
 ]
 
-const FORMATS = ['Best', '4K', '1080p MP4', 'MP3 320', 'MP3 128', 'M4A']
+const FORMATS = ['Best', '4K', '1080p', '720p', '480p', 'MP3 320', 'M4A']
 
-const SMALL_FEATURES = [
+const EXTRAS = [
   {
     icon: 'library',
-    title: 'Persistent library',
-    body: 'Downloads, history and settings live in one file in the app-support folder. Interrupted transfers re-queue the next time you launch ZON.',
+    title: 'Survives anything',
+    body: 'Your library lives in one JSON file. Quit, crash or reboot mid-transfer and everything re-queues on the next launch.',
+  },
+  {
+    icon: 'bookmark',
+    title: 'Browser button',
+    body: 'A bookmarklet sends the page you are on to ZON — or straight to MP3. It talks to 127.0.0.1 only, with a per-install key.',
   },
   {
     icon: 'tray',
-    title: 'Desktop integration',
-    body: 'Tray icon with pause and resume, native notifications, launch at login, a copied-link banner, drag & drop, and a browser bookmarklet.',
+    title: 'Lives in the tray',
+    body: 'Pause and resume from the menu bar, native notifications, launch at login, and a banner when you copy a link.',
   },
   {
     icon: 'queue',
     title: 'Queue control',
-    body: 'Global and per-download speed limits, priorities and drag-to-reorder queueing. Stalled torrents stop occupying download slots.',
+    body: 'Priorities, drag-to-reorder, a cap on simultaneous downloads, and speed limits globally or per download.',
+  },
+  {
+    icon: 'drop',
+    title: 'Drag & drop',
+    body: 'Drop links, .torrent files, or .txt / .webloc / .url files anywhere on the window to queue them.',
+  },
+  {
+    icon: 'lock',
+    title: 'Logged-in sites',
+    body: 'Private, age-restricted or Instagram videos? Pick your browser and yt-dlp reads its cookies — nothing is uploaded.',
   },
 ]
 
 const TOOLS = [
-  { name: 'yt-dlp', note: 'Installed from Settings › Media in one click' },
-  { name: 'ffmpeg', note: 'Bundled and unpacked on first launch' },
-  { name: 'aria2', note: 'Bundled on Windows and Linux' },
+  { name: 'yt-dlp', role: 'Video & audio', note: 'One-click install from Settings › Media' },
+  { name: 'ffmpeg', role: 'Merging & MP3', note: 'Bundled, unpacked on first launch' },
+  { name: 'aria2', role: 'BitTorrent', note: 'Bundled on Windows and Linux' },
+]
+
+const FAQ = [
+  {
+    q: 'Is ZON really free?',
+    a: 'Yes. ZON is open source, with no account to create and no ads. The source and every release build are on GitHub.',
+  },
+  {
+    q: 'Do I need to install anything else?',
+    a: 'ffmpeg ships inside the app, and aria2 does too on Windows and Linux. For video sites, ZON installs yt-dlp for you in one click. Anything already on your PATH or from Homebrew, WinGet or Scoop is picked up automatically.',
+  },
+  {
+    q: 'What happens if my Mac sleeps or the app crashes?',
+    a: 'HTTP downloads resume from the exact byte where each segment stopped, torrents re-verify their pieces, and anything that was running is put back in the queue when ZON starts again.',
+  },
+  {
+    q: 'Where is my data stored?',
+    a: 'Only on your machine: downloads, history and settings are in library.json in the app-support folder. The browser button listens on 127.0.0.1 and nothing else.',
+  },
+  {
+    q: 'Can I download anything I want?',
+    a: 'Only download content you have the right to download. Many sites restrict downloading in their terms, and copyright law still applies.',
+  },
 ]
 
 const ICONS = {
@@ -102,11 +146,27 @@ const ICONS = {
     </>
   ),
   queue: <path d="M4 6h16M4 12h10M4 18h6m10-6v6m0 0-2.5-2.5M20 18l2.5-2.5" />,
-  laptop: (
+  bookmark: <path d="M6 4h12v16l-6-4-6 4V4Z" />,
+  drop: (
     <>
-      <rect x="4" y="5" width="16" height="11" rx="2" />
-      <path d="M2 19h20" />
+      <path d="M12 3v12m0 0-4-4m4 4 4-4" />
+      <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
     </>
+  ),
+  lock: (
+    <>
+      <rect x="5" y="11" width="14" height="10" rx="2" />
+      <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+    </>
+  ),
+  history: (
+    <>
+      <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+      <path d="M3 3v5h5M12 7v5l3 2" />
+    </>
+  ),
+  apple: (
+    <path d="M16 13.5c0-2.4 2-3.5 2-3.6-1.1-1.6-2.8-1.8-3.4-1.8-1.4-.2-2.8.9-3.5.9s-1.9-.8-3.1-.8C6.4 8.2 5 9.1 4.2 10.5c-1.7 2.9-.4 7.2 1.2 9.6.8 1.1 1.7 2.4 3 2.4 1.2-.1 1.6-.8 3.1-.8s1.8.8 3.1.8c1.3 0 2.1-1.2 2.9-2.3.9-1.3 1.3-2.6 1.3-2.7 0 0-2.6-1-2.8-4ZM13.7 6.4c.7-.8 1.1-1.9 1-3-1 0-2.1.7-2.8 1.5-.6.7-1.2 1.8-1 2.9 1.1.1 2.1-.6 2.8-1.4Z" />
   ),
   window: (
     <>
@@ -120,6 +180,8 @@ const ICONS = {
       <path d="m7 9 3 3-3 3m5 0h5" />
     </>
   ),
+  check: <path d="m5 12 5 5 9-10" />,
+  plus: <path d="M12 5v14M5 12h14" />,
   github: (
     <path d="M9 19c-4 1.5-4-2-6-2.5m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1.1-.3-3.5 1.3a12 12 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V22" />
   ),
@@ -171,20 +233,54 @@ function useReveal() {
   }, [])
 }
 
+// A screenshot in a macOS-style window frame.
+function Window({ src, alt, width, height, title, eager, className = '' }) {
+  return (
+    <div className={`window ${className}`}>
+      <div className="window-bar" aria-hidden="true">
+        <span />
+        <span />
+        <span />
+        {title && <em>{title}</em>}
+      </div>
+      <img
+        src={src}
+        alt={alt}
+        width={width}
+        height={height}
+        loading={eager ? 'eager' : 'lazy'}
+        decoding="async"
+      />
+    </div>
+  )
+}
+
+// A cropped piece of the UI, without window chrome.
+function Panel({ src, alt, width, height, className = '' }) {
+  return (
+    <div className={`panel ${className}`}>
+      <img src={src} alt={alt} width={width} height={height} loading="lazy" decoding="async" />
+    </div>
+  )
+}
+
 function Nav() {
   return (
     <header className="nav-wrap">
       <div className="nav">
         <a className="brand" href="#top">
-          <img src="./favicon.png" alt="" width="22" height="22" />
+          <img src="./favicon.png" alt="" width="24" height="24" />
           <span>ZON</span>
         </a>
         <nav>
           <a href="#features">Features</a>
-          <a href="#tour">Tour</a>
-          <a href="#download">Download</a>
+          <a href="#themes">Themes</a>
+          <a href="#faq">FAQ</a>
           <a href={REPO} className="nav-gh" aria-label="GitHub">
             <Icon name="github" size={18} />
+          </a>
+          <a href="#download" className="nav-cta">
+            Download
           </a>
         </nav>
       </div>
@@ -192,55 +288,66 @@ function Nav() {
   )
 }
 
-function Hero() {
-  const current = detectPlatform()
+function Hero({ platform }) {
   return (
     <section className="hero" id="top">
+      <div className="hero-glow" aria-hidden="true" />
       <div className="hero-grid" aria-hidden="true" />
       <div className="hero-inner">
         <a className="pill" href={RELEASES}>
           <span className="pill-dot" />
-          Now on macOS, Windows &amp; Linux
+          v1.0 — now with a Windows installer
           <span className="pill-arrow">→</span>
         </a>
         <h1>
-          The download
+          Every download.
           <br />
-          <span className="dim">manager.</span>
+          <span className="dim">One quiet app.</span>
         </h1>
         <p className="lede">
-          Segmented HTTP downloads, video and audio, and torrents — one quiet
-          desktop app that picks up where it left off.
+          Files, YouTube and 1000+ video sites, and torrents — split into
+          parallel connections, resumed after any crash, and kept in one tidy
+          library.
         </p>
         <div className="actions">
-          <a className="btn btn-solid" href={RELEASES}>
+          <a className="btn btn-solid btn-lg" href={RELEASES}>
             <Icon name="arrow" size={18} />
-            Download for {current.name}
+            Download for {platform.name}
           </a>
-          <a className="btn" href={REPO}>
+          <a className="btn btn-lg" href={REPO}>
             <Icon name="github" size={18} />
-            View source
+            Star on GitHub
           </a>
         </div>
-        <p className="meta">Free and open source · Built with Flutter</p>
+        <p className="meta">
+          Free &amp; open source · macOS · Windows · Linux
+        </p>
       </div>
 
-      <figure className="shot">
-        <div className="shot-frame">
-          <div className="shot-bar" aria-hidden="true">
-            <span />
-            <span />
-            <span />
-          </div>
-          <img
-            src="./screenshot.jpg"
-            alt="ZON on macOS: the download list with completed files, a speed graph and the details panel"
-            width="1920"
-            height="1200"
-          />
-        </div>
+      <figure className="hero-shot">
+        <Window
+          src="./shots/dashboard-dark.webp"
+          alt="ZON on macOS downloading an Ubuntu ISO over 32 connections, a 4K YouTube video and an Arch Linux torrent, with a live speed graph and the details panel"
+          width="2400"
+          height="1500"
+          title="ZON"
+          eager
+        />
+        <Callout className="callout-a" label="Live throughput" value="39.3 MB/s" />
+        <Callout className="callout-b" label="Ubuntu ISO" value="32 connections" />
+        <Callout className="callout-c" label="Torrent swarm" value="212 seeds" />
       </figure>
     </section>
+  )
+}
+
+function Callout({ label, value, className }) {
+  return (
+    <div className={`callout ${className}`} aria-hidden="true">
+      <span className="callout-dot" />
+      <span className="callout-label">{label}</span>
+      <span className="callout-value">{value}</span>
+    </div>
   )
 }
 
@@ -301,60 +408,219 @@ function Segments() {
   )
 }
 
+function Bullets({ items }) {
+  return (
+    <ul className="bullets">
+      {items.map((b) => (
+        <li key={b}>
+          <Icon name="check" size={16} />
+          {b}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 function Features() {
   return (
     <section className="section" id="features">
       <div className="section-head reveal">
         <p className="eyebrow">Features</p>
-        <h2>Everything a download manager should do.</h2>
+        <h2>Three engines. One queue.</h2>
         <p className="section-sub">
-          Three engines behind one queue. Every transfer survives a pause, a
-          quit or a crash.
+          Paste anything — a file URL, a YouTube playlist, a magnet link — and
+          ZON picks the right engine. No juggling three apps.
         </p>
       </div>
 
-      <div className="bento">
-        <article className="card card-wide reveal">
-          <div className="card-text">
-            <Icon name="bolt" />
-            <h3>Segmented HTTP engine</h3>
-            <p>
-              Splits files into up to 32 parallel byte ranges. Resumes after a
-              pause, quit or crash, retries with backoff, and steps aside when a
-              server answers 429.
-            </p>
-          </div>
-          <Segments />
-        </article>
-
-        <article className="card reveal">
-          <Icon name="play" />
-          <h3>Video &amp; audio</h3>
+      <article className="feature feature-speed reveal">
+        <div className="feature-text">
+          <span className="feature-tag">
+            <Icon name="bolt" size={16} /> Segmented HTTP
+          </span>
+          <h3>Saturates your connection, not your patience.</h3>
           <p>
-            YouTube, Shorts, playlists, Instagram, TikTok, X, Vimeo, SoundCloud
-            and 1000+ more sites via yt-dlp.
+            Every file is split into up to 32 byte ranges fetched in parallel.
+            Pause, quit or crash — each segment resumes from its exact byte. A
+            server that answers 429 gets backed off automatically instead of
+            hammered.
+          </p>
+          <Bullets
+            items={[
+              'Up to 32 connections per file',
+              'Resume after pause, quit or crash',
+              'Retries with backoff, honours 429',
+            ]}
+          />
+        </div>
+        <div className="feature-media">
+          <Panel
+            src="./shots/speed.webp"
+            alt="ZON's download speed panel: 39.3 MB/s live, 50.8 MB/s peak, 40.9 MB/s average"
+            width="1400"
+            height="247"
+          />
+          <Segments />
+        </div>
+      </article>
+
+      <article className="feature feature-flip reveal">
+        <div className="feature-text">
+          <span className="feature-tag">
+            <Icon name="play" size={16} /> Video &amp; audio
+          </span>
+          <h3>YouTube, Reels, TikTok — and 1000+ more.</h3>
+          <p>
+            Paste a link and ZON shows the title, length and size before you
+            commit. Pick a resolution or pull just the audio. Playlists and
+            channels become one download per video.
           </p>
           <ul className="chips">
             {FORMATS.map((f) => (
               <li key={f}>{f}</li>
             ))}
           </ul>
-        </article>
+        </div>
+        <div className="feature-media">
+          <Panel
+            className="panel-tall"
+            src="./shots/media.webp"
+            alt="The Download Video or Audio dialog with a YouTube link, a preview of the video, and format choices from Best video and 4K to MP3 and M4A"
+            width="1156"
+            height="1430"
+          />
+        </div>
+      </article>
 
-        <article className="card reveal">
-          <Icon name="magnet" />
-          <h3>BitTorrent</h3>
+      <article className="feature reveal">
+        <div className="feature-text">
+          <span className="feature-tag">
+            <Icon name="magnet" size={16} /> BitTorrent
+          </span>
+          <h3>Torrents without another client.</h3>
           <p>
-            Magnet links and .torrent files through a private aria2 daemon: live
-            peers, pause and resume with piece verification, optional seeding to
-            a ratio.
+            Magnet links and .torrent files — from a URL, the file picker, drag
+            &amp; drop or Finder's “Open With” — run through a private aria2
+            daemon. Watch peers, seeds and upload live, and seed back to a ratio
+            if you like.
           </p>
-          <code className="magnet">magnet:?xt=urn:btih:…</code>
-        </article>
+          <Bullets
+            items={[
+              'Pause and resume with piece verification',
+              'Stalled torrents free their download slot',
+              'Optional system handler for magnet links',
+            ]}
+          />
+        </div>
+        <div className="feature-media feature-media-narrow">
+          <Panel
+            className="panel-tall"
+            src="./shots/torrent.webp"
+            alt="The details panel for an Arch Linux torrent at 86%: 48 peers, 212 seeds, 940 KB/s upload"
+            width="680"
+            height="1665"
+          />
+        </div>
+      </article>
 
-        {SMALL_FEATURES.map((f) => (
-          <article className="card card-third reveal" key={f.title}>
-            <Icon name={f.icon} />
+      <div className="duo reveal">
+        <figure>
+          <Panel
+            src="./shots/history.webp"
+            alt="ZON's history screen listing completed, failed and cancelled downloads with filters and search"
+            width="1400"
+            height="1384"
+          />
+          <figcaption>
+            <Icon name="history" size={16} />
+            <span>
+              <strong>History</strong> — every finished, failed and cancelled
+              transfer, searchable, one click to re-download.
+            </span>
+          </figcaption>
+        </figure>
+        <figure>
+          <Panel
+            src="./shots/settings.webp"
+            alt="ZON's settings: download location, startup and tray options, simultaneous downloads, connections per download, speed limit and retries"
+            width="1400"
+            height="1384"
+          />
+          <figcaption>
+            <Icon name="queue" size={16} />
+            <span>
+              <strong>Settings</strong> — connections, retries, speed limits,
+              proxy, notifications and media defaults.
+            </span>
+          </figcaption>
+        </figure>
+      </div>
+    </section>
+  )
+}
+
+function Themes() {
+  const [split, setSplit] = useState(50)
+  return (
+    <section className="section" id="themes">
+      <div className="section-head reveal">
+        <p className="eyebrow">Light &amp; dark</p>
+        <h2>Matches your desktop.</h2>
+        <p className="section-sub">
+          Follows the system theme or pick one. Drag to compare.
+        </p>
+      </div>
+      <div className="compare reveal" style={{ '--split': `${split}%` }}>
+        <Window
+          className="window-light"
+          src="./shots/dashboard-light.webp"
+          alt="ZON in light mode"
+          width="2400"
+          height="1500"
+        />
+        <div className="compare-top" aria-hidden="true">
+          <Window
+            src="./shots/dashboard-dark.webp"
+            alt=""
+            width="2400"
+            height="1500"
+          />
+        </div>
+        <span className="compare-label compare-label-dark" aria-hidden="true">
+          Dark
+        </span>
+        <span className="compare-label compare-label-light" aria-hidden="true">
+          Light
+        </span>
+        <div className="compare-handle" aria-hidden="true">
+          <span />
+        </div>
+        <input
+          type="range"
+          min="0"
+          max="100"
+          value={split}
+          onChange={(e) => setSplit(Number(e.target.value))}
+          aria-label="Compare dark and light themes"
+        />
+      </div>
+    </section>
+  )
+}
+
+function Extras() {
+  return (
+    <section className="section">
+      <div className="section-head reveal">
+        <p className="eyebrow">The details</p>
+        <h2>Small things, done properly.</h2>
+      </div>
+      <div className="extras">
+        {EXTRAS.map((f) => (
+          <article className="card reveal" key={f.title}>
+            <span className="card-icon">
+              <Icon name={f.icon} />
+            </span>
             <h3>{f.title}</h3>
             <p>{f.body}</p>
           </article>
@@ -364,87 +630,43 @@ function Features() {
   )
 }
 
-function Tour() {
-  return (
-    <section className="section" id="tour">
-      <div className="section-head reveal">
-        <p className="eyebrow">A closer look</p>
-        <h2>Built to stay out of your way.</h2>
-      </div>
-
-      <div className="tour-row reveal">
-        <div className="tour-text">
-          <span className="tour-num">01</span>
-          <h3>Paste anything.</h3>
-          <p>
-            A plain URL, a playlist, a magnet link or a whole list of links. ZON
-            picks the right engine, so you never choose between three apps.
-          </p>
-        </div>
-        <div className="tour-media">
-          <img
-            src="./shot-input.jpg"
-            alt="The ZON link bar with shortcuts for clipboard, multiple links, YouTube, torrents and batch downloads"
-            width="1200"
-            height="193"
-            loading="lazy"
-          />
-        </div>
-      </div>
-
-      <div className="tour-row tour-row-flip reveal">
-        <div className="tour-text">
-          <span className="tour-num">02</span>
-          <h3>Every detail, one click away.</h3>
-          <p>
-            Progress, connection count, HTTP status, server and resume support
-            for every transfer — in a side panel instead of a log file.
-          </p>
-        </div>
-        <div className="tour-media tour-media-tall">
-          <img
-            src="./shot-details.jpg"
-            alt="The ZON details panel showing a completed download at 100% with 16 connections"
-            width="670"
-            height="720"
-            loading="lazy"
-          />
-        </div>
-      </div>
-    </section>
-  )
-}
-
 function Tools() {
   return (
     <section className="section">
-      <div className="section-head reveal">
-        <p className="eyebrow">Under the hood</p>
-        <h2>No dependencies to hunt down.</h2>
+      <div className="tools-wrap reveal">
+        <div className="tools-head">
+          <p className="eyebrow">Under the hood</p>
+          <h2>No dependencies to hunt down.</h2>
+          <p className="section-sub">
+            ZON runs proven open-source tools as separate programs and sets
+            them up for you. Anything already on your PATH is used first.
+          </p>
+        </div>
+        <ul className="tools">
+          {TOOLS.map((t) => (
+            <li key={t.name}>
+              <code>{t.name}</code>
+              <span className="tool-role">{t.role}</span>
+              <span className="tool-note">{t.note}</span>
+            </li>
+          ))}
+        </ul>
       </div>
-      <ul className="tools reveal">
-        {TOOLS.map((t) => (
-          <li key={t.name}>
-            <code>{t.name}</code>
-            <span>{t.note}</span>
-          </li>
-        ))}
-      </ul>
     </section>
   )
 }
 
-function Download() {
-  const current = detectPlatform()
+function Download({ platform }) {
   return (
     <section className="section" id="download">
       <div className="section-head reveal">
         <p className="eyebrow">Download</p>
         <h2>Pick your platform.</h2>
+        <p className="section-sub">Built and tested by CI on every release.</p>
       </div>
       <ul className="platforms reveal">
         {PLATFORMS.map((p) => {
-          const isCurrent = p.id === current.id
+          const isCurrent = p.id === platform.id
           return (
             <li key={p.id} className={isCurrent ? 'platform is-current' : 'platform'}>
               <div className="platform-top">
@@ -454,6 +676,7 @@ function Download() {
               <h3>{p.name}</h3>
               <p className="platform-detail">{p.detail}</p>
               <code className="platform-file">{p.file}</code>
+              <p className="platform-note">{p.note}</p>
               <a
                 className={isCurrent ? 'btn btn-solid btn-block' : 'btn btn-block'}
                 href={RELEASES}
@@ -466,23 +689,45 @@ function Download() {
         })}
       </ul>
       <p className="note">
-        Every build is also on <a href={`${REPO}/releases`}>GitHub Releases</a>.
-        Source and CI live in <a href={REPO}>the repository</a>.
+        Also available as a portable Windows zip on{' '}
+        <a href={`${REPO}/releases`}>GitHub Releases</a>. Prefer to build it
+        yourself? <a href={REPO}>Clone the repository</a>.
       </p>
     </section>
   )
 }
 
-function Cta() {
-  const current = detectPlatform()
+function Faq() {
+  return (
+    <section className="section" id="faq">
+      <div className="section-head reveal">
+        <p className="eyebrow">FAQ</p>
+        <h2>Questions, answered.</h2>
+      </div>
+      <div className="faq reveal">
+        {FAQ.map((f) => (
+          <details key={f.q}>
+            <summary>
+              {f.q}
+              <Icon name="plus" size={18} />
+            </summary>
+            <p>{f.a}</p>
+          </details>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function Cta({ platform }) {
   return (
     <section className="cta reveal">
-      <img src="./favicon.png" alt="" width="56" height="56" />
+      <img src="./favicon.png" alt="" width="72" height="72" />
       <h2>Stop babysitting downloads.</h2>
-      <p>It's free, it's open source, and it picks up where it left off.</p>
-      <a className="btn btn-solid" href={RELEASES}>
+      <p>Free, open source, and it picks up exactly where it left off.</p>
+      <a className="btn btn-solid btn-lg" href={RELEASES}>
         <Icon name="arrow" size={18} />
-        Download for {current.name}
+        Download for {platform.name}
       </a>
     </section>
   )
@@ -492,7 +737,7 @@ function Footer() {
   return (
     <footer className="footer">
       <div className="footer-brand">
-        <img src="./favicon.png" alt="" width="18" height="18" />
+        <img src="./favicon.png" alt="" width="20" height="20" />
         <span>ZON</span>
       </div>
       <p className="footer-legal">
@@ -509,18 +754,21 @@ function Footer() {
 
 export default function App() {
   useReveal()
+  const platform = detectPlatform()
   return (
     <>
       <Nav />
       <main>
-        <Hero />
+        <Hero platform={platform} />
         <Sources />
         <Stats />
         <Features />
-        <Tour />
+        <Themes />
+        <Extras />
         <Tools />
-        <Download />
-        <Cta />
+        <Download platform={platform} />
+        <Faq />
+        <Cta platform={platform} />
       </main>
       <Footer />
     </>
