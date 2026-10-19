@@ -16,6 +16,7 @@ import '../engine/media/media_engine.dart';
 import '../engine/media/media_sites.dart';
 import '../engine/media/ytdlp.dart';
 import '../engine/torrent/torrent_engine.dart';
+import '../engine/torrent/torrent_manifest.dart';
 import '../platform/local_api.dart';
 import '../platform/desktop_bridge.dart';
 import 'library_store.dart';
@@ -496,6 +497,7 @@ class AppState extends ChangeNotifier implements TransferListener {
     String createdVia = 'Manual',
     bool notify = true,
     bool? lockName,
+    List<int>? selectedFiles,
   }) {
     final link = url.trim();
     final site = detectMediaSite(link);
@@ -566,6 +568,7 @@ class AppState extends ChangeNotifier implements TransferListener {
       nameLocked: lockName ?? typed.isNotEmpty,
       thumbnailUrl: thumbnailUrl,
       createdVia: createdVia,
+      selectedFiles: isTorrent ? selectedFiles : null,
     );
 
     _downloads = [item, ..._downloads];
@@ -591,6 +594,24 @@ class AppState extends ChangeNotifier implements TransferListener {
     return id;
   }
 
+  /// Reads a torrent's file list for the Add dialog (see
+  /// [TorrentEngine.inspect]).
+  Future<TorrentManifest> inspectTorrent(
+    String url, {
+    void Function(int peers)? onPeers,
+  }) {
+    final engine = _torrent;
+    if (engine is! TorrentEngine) {
+      return Future.error(const Aria2Exception('Torrents are unavailable'));
+    }
+    return engine.inspect(url, onPeers: onPeers);
+  }
+
+  void cancelTorrentInspect(String url) {
+    final engine = _torrent;
+    if (engine is TorrentEngine) unawaited(engine.cancelInspect(url));
+  }
+
   /// Adds a local `.torrent` file. A copy is kept in the app folder so the
   /// download survives the original being moved or deleted.
   Future<DownloadItem> addTorrentFile(
@@ -599,6 +620,7 @@ class AppState extends ChangeNotifier implements TransferListener {
     DownloadPriority priority = DownloadPriority.normal,
     bool startImmediately = true,
     String? speedLimit,
+    List<int>? selectedFiles,
   }) async {
     var source = path;
     if (dataDir.isNotEmpty) {
@@ -617,6 +639,7 @@ class AppState extends ChangeNotifier implements TransferListener {
       startImmediately: startImmediately,
       speedLimit: speedLimit,
       notify: false,
+      selectedFiles: selectedFiles,
     );
     // Name it after the original file, not the stamped copy.
     _update(

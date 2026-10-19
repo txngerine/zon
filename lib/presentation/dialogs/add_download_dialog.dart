@@ -15,6 +15,8 @@ import '../../domain/models/media_format.dart';
 import '../../engine/media/media_sites.dart';
 import '../../engine/media/ytdlp.dart';
 import '../../engine/torrent/torrent_engine.dart';
+import '../../engine/torrent/torrent_manifest.dart';
+import 'torrent_file_picker.dart';
 
 /// `media` is the single-link dialog with video/audio options forced on, for
 /// sites ZON does not recognise by URL.
@@ -104,6 +106,16 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
   /// A local `.torrent` picked with the file chooser.
   String? _torrentFile;
 
+  // Torrent file list, read as soon as there is a torrent to read.
+  Timer? _inspectDebounce;
+  int _inspectToken = 0;
+  String _inspectedSource = '';
+  bool _inspecting = false;
+  int _peers = 0;
+  TorrentManifest? _manifest;
+  String? _manifestError;
+  Set<int> _pickedFiles = {};
+
   AppState get state => widget.state;
   AddDownloadMode get mode => widget.mode;
   bool get _singleLink =>
@@ -124,6 +136,7 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
       _startImmediately = false;
     }
     if (widget.initialUrl.isNotEmpty) _onUrlChanged(widget.initialUrl);
+    if (_torrentFile != null) _scheduleInspect(immediate: true);
     state.addListener(_onState);
   }
 
@@ -131,6 +144,8 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
   void dispose() {
     state.removeListener(_onState);
     _probeDebounce?.cancel();
+    _inspectDebounce?.cancel();
+    if (_inspecting) state.cancelTorrentInspect(_inspectedSource);
     _url.dispose();
     _fileName.dispose();
     _savePath.dispose();
@@ -143,6 +158,10 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
     final ready = state.mediaTools?.hasYtDlp ?? false;
     if (ready && _isMedia && _info == null && !_probing) {
       _scheduleProbe(_url.text.trim(), immediate: true);
+    }
+    // aria2 just got installed: the magnet skipped earlier can be read now.
+    if (_hasAria2 && _isTorrent && _inspectedSource.isEmpty) {
+      _scheduleInspect(immediate: true);
     }
     setState(() {});
   }
@@ -192,6 +211,7 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
 
   bool get _canStart {
     if (_isTorrent) {
+      if (_manifest != null && _pickedFiles.isEmpty) return false;
       return _hasAria2 && (_torrentFile != null || _urls.isNotEmpty);
     }
     if (_urls.isEmpty) return false;
@@ -207,6 +227,11 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
       _fileName.text = link.isEmpty || _isMedia || _isTorrent
           ? ''
           : fileNameFromUrl(link);
+    }
+    if (_isTorrent) {
+      _scheduleInspect();
+    } else {
+      _clearInspection();
     }
     if (_isMedia) {
       _scheduleProbe(value.trim());
@@ -255,6 +280,75 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
     }
   }
 
+  /// The `.torrent` path or link whose file list to show.
+  String get _torrentSource {
+    final file = _torrentFile;
+    if (file != null) return file;
+    final link = _url.text.trim();
+    return isTorrentLink(link) ? link : '';
+  }
+
+  void _clearInspection() {
+    _inspectDebounce?.cancel();
+    if (_inspecting) state.cancelTorrentInspect(_inspectedSource);
+    _inspectToken++;
+    _inspectedSource = '';
+    _inspecting = false;
+    _peers = 0;
+    _manifest = null;
+    _manifestError = null;
+    _pickedFiles = {};
+  }
+
+  void _scheduleInspect({bool immediate = false, bool retry = false}) {
+    final source = _torrentSource;
+    if (source == _inspectedSource && !retry) return;
+    _clearInspection();
+    if (source.isEmpty) return;
+    // Magnets need aria2 to reach peers; the install panel covers that.
+    if (source.toLowerCase().startsWith('magnet:') && !_hasAria2) return;
+    _inspectedSource = source;
+    _inspecting = true;
+    _inspectDebounce = Timer(
+      immediate ? Duration.zero : const Duration(milliseconds: 500),
+      () => _inspect(source),
+    );
+  }
+
+  Future<void> _inspect(String source) async {
+    final token = ++_inspectToken;
+    try {
+      final manifest = await state.inspectTorrent(
+        source,
+        onPeers: (peers) {
+          if (mounted && token == _inspectToken && peers != _peers) {
+            setState(() => _peers = peers);
+          }
+        },
+      );
+      if (!mounted || token != _inspectToken) return;
+      setState(() {
+        _manifest = manifest;
+        _inspecting = false;
+        _pickedFiles = {for (final file in manifest.visibleFiles) file.index};
+      });
+    } catch (error) {
+      if (!mounted || token != _inspectToken) return;
+      setState(() {
+        _manifestError = '$error'.replaceFirst('FormatException: ', '');
+        _inspecting = false;
+      });
+    }
+  }
+
+  /// Null downloads everything.
+  List<int>? get _selectedFiles {
+    final manifest = _manifest;
+    if (manifest == null) return null;
+    if (_pickedFiles.length == manifest.visibleFiles.length) return null;
+    return _pickedFiles.toList()..sort();
+  }
+
   Future<void> _browse() async {
     final dir = await getDirectoryPath(initialDirectory: _savePath.text);
     if (dir != null && mounted) setState(() => _savePath.text = dir);
@@ -275,12 +369,14 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
             priority: _priority,
             startImmediately: start,
             speedLimit: _speedLimit,
+            selectedFiles: _selectedFiles,
           ),
         );
       } else {
         state.createDownload(
           url: _url.text,
           kind: DownloadKind.torrent,
+          selectedFiles: _selectedFiles,
           savePath: _savePath.text,
           priority: _priority,
           startImmediately: start,
@@ -957,13 +1053,14 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    file == null
-                        ? torrentDisplayName(
-                            _url.text.trim().isEmpty
-                                ? 'Torrent'
-                                : _url.text.trim(),
-                          )
-                        : torrentDisplayName(file),
+                    _manifest?.name ??
+                        (file == null
+                            ? torrentDisplayName(
+                                _url.text.trim().isEmpty
+                                    ? 'Torrent'
+                                    : _url.text.trim(),
+                              )
+                            : torrentDisplayName(file)),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: AppType.body(
@@ -994,7 +1091,111 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
         ),
       ),
       const SizedBox(height: 16),
+      ..._torrentFiles(palette),
     ];
+  }
+
+  List<Widget> _torrentFiles(ZonPalette palette) {
+    final manifest = _manifest;
+    if (manifest != null) {
+      return [
+        TorrentFilePicker(
+          manifest: manifest,
+          selected: _pickedFiles,
+          onChanged: (picked) => setState(() => _pickedFiles = picked),
+        ),
+        if (_pickedFiles.isEmpty) ...[
+          const SizedBox(height: 8),
+          Text(
+            'Pick at least one file.',
+            style: AppType.body(palette.textSecondary, size: 11.5),
+          ),
+        ],
+        const SizedBox(height: 16),
+      ];
+    }
+    final magnet = _inspectedSource.toLowerCase().startsWith('magnet:');
+    if (_inspecting) {
+      return [
+        _panel(
+          palette,
+          Row(
+            children: [
+              SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(
+                  strokeWidth: 1.6,
+                  color: palette.glow,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      magnet
+                          ? 'Fetching file list from peers…'
+                          : 'Reading file list…',
+                      style: AppType.body(
+                        palette.textPrimary,
+                        size: 12.5,
+                        weight: FontWeight.w600,
+                      ),
+                    ),
+                    if (magnet) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        '${_peers == 0 ? 'Looking for peers' : '$_peers peer${_peers == 1 ? '' : 's'} connected'}'
+                        '  •  Start now to download every file.',
+                        style: AppType.body(palette.textMuted, size: 11.5),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+      ];
+    }
+    final error = _manifestError;
+    if (error != null) {
+      return [
+        Row(
+          children: [
+            Icon(
+              Icons.info_outline_rounded,
+              size: 15,
+              color: palette.textMuted,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Could not read the file list: $error',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: AppType.body(palette.textSecondary, size: 11.5),
+              ),
+            ),
+            const SizedBox(width: 8),
+            MonoButton(
+              label: 'Retry',
+              height: 30,
+              fontSize: 11.5,
+              hPadding: 12,
+              onTap: () => setState(
+                () => _scheduleInspect(immediate: true, retry: true),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+      ];
+    }
+    return const [];
   }
 
   Future<void> _pickTorrent() async {
@@ -1011,6 +1212,7 @@ class _AddDownloadDialogState extends State<AddDownloadDialog> {
     setState(() {
       _torrentFile = file.path;
       _url.text = '';
+      _scheduleInspect(immediate: true);
     });
   }
 

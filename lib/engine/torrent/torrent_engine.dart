@@ -6,6 +6,7 @@ import 'dart:math';
 import '../../domain/models/download.dart';
 import '../engine.dart';
 import '../media/ytdlp.dart';
+import 'torrent_manifest.dart';
 
 /// True for magnet links and `.torrent` files (remote or local).
 bool isTorrentLink(String url) {
@@ -101,7 +102,13 @@ class _TorrentTask {
   final DownloadItem item;
   String? gid;
   String? name;
+
+  /// Selected files (all of them without a selection).
   List<String> files = const [];
+
+  /// Every file aria2 may have touched, for cleanup on cancel: unselected
+  /// files sharing a piece with selected ones get partly written too.
+  List<String> allFiles = const [];
   String? dir;
   bool stopped = false;
   Map<String, String> options = const {};
@@ -130,6 +137,19 @@ class TorrentEngine implements TransferEngine {
   Future<Aria2Rpc>? _starting;
   Timer? _poll;
   bool _polling = false;
+
+  /// Magnet metadata fetches started by [inspect], by link.
+  final Map<String, String> _inspecting = {};
+
+  /// Where magnet metadata is saved, so starting the download (or resuming
+  /// it after a restart) never asks peers for it twice.
+  String get _metaDir => '$stateDir${Platform.pathSeparator}meta';
+
+  File? _cachedMeta(String magnet) {
+    final hash = magnetInfoHash(magnet);
+    if (hash == null) return null;
+    return File('$_metaDir${Platform.pathSeparator}$hash.torrent');
+  }
 
   static const _statusKeys = [
     'gid',
@@ -185,6 +205,8 @@ class TorrentEngine implements TransferEngine {
         'dir': item.savePath,
         'max-download-limit': '${limit ?? 0}',
         if (ratio == null) 'seed-time': '0' else 'seed-ratio': '$ratio',
+        if (item.selectedFiles case final picked? when picked.isNotEmpty)
+          'select-file': selectFileOption(picked),
       };
 
       task.options = addOptions;
@@ -218,6 +240,14 @@ class TorrentEngine implements TransferEngine {
   ) async {
     Future<Object?> add() async {
       if (url.toLowerCase().startsWith('magnet:')) {
+        final cached = _cachedMeta(url);
+        if (cached != null && await cached.exists()) {
+          return rpc.call('aria2.addTorrent', [
+            base64Encode(await cached.readAsBytes()),
+            <String>[],
+            options,
+          ]);
+        }
         return rpc.call('aria2.addUri', [
           [url],
           options,
@@ -446,12 +476,33 @@ class TorrentEngine implements TransferEngine {
 
     task.dir = status['dir']?.toString() ?? task.dir;
     final files = status['files'];
+    // With a file selection, aria2's totals still count the whole torrent;
+    // sum the chosen files instead so progress reaches 100%.
+    int? pickedTotal;
+    int? pickedDone;
     if (files is List) {
-      task.files = [
+      task.allFiles = [
         for (final file in files)
           if (file is Map && '${file['path'] ?? ''}'.isNotEmpty)
             '${file['path']}',
       ];
+      task.files = [
+        for (final file in files)
+          if (file is Map &&
+              '${file['path'] ?? ''}'.isNotEmpty &&
+              file['selected'] != 'false')
+            '${file['path']}',
+      ];
+      if (task.item.selectedFiles != null) {
+        pickedTotal = 0;
+        pickedDone = 0;
+        for (final file in files) {
+          if (file is! Map || file['selected'] == 'false') continue;
+          pickedTotal = pickedTotal! + (int.tryParse('${file['length']}') ?? 0);
+          pickedDone =
+              pickedDone! + (int.tryParse('${file['completedLength']}') ?? 0);
+        }
+      }
     }
     final bittorrent = status['bittorrent'];
     final info = bittorrent is Map ? bittorrent['info'] : null;
@@ -486,8 +537,8 @@ class TorrentEngine implements TransferEngine {
         return;
     }
 
-    final total = number('totalLength');
-    final done = number('completedLength');
+    final total = pickedTotal ?? number('totalLength');
+    final done = pickedDone ?? number('completedLength');
     final finished =
         !fetchingMetadata &&
         (status['status'] == 'complete' ||
@@ -551,6 +602,79 @@ class TorrentEngine implements TransferEngine {
     } catch (_) {}
   }
 
+  /// Reads a torrent's file list without downloading it. `.torrent` files
+  /// (local or remote) are parsed directly; magnets ask peers for the
+  /// metadata through aria2, reporting the peer count via [onPeers] while it
+  /// waits. Runs until it succeeds, fails, or [cancelInspect] is called.
+  Future<TorrentManifest> inspect(
+    String url, {
+    void Function(int peers)? onPeers,
+  }) async {
+    final link = url.trim();
+    if (!link.toLowerCase().startsWith('magnet:')) {
+      return TorrentManifest.parse(await _torrentBytes(link));
+    }
+    final cached = _cachedMeta(link);
+    if (cached != null && await cached.exists()) {
+      return TorrentManifest.parse(await cached.readAsBytes());
+    }
+    if (cached == null) {
+      throw const Aria2Exception('This magnet link has no info hash');
+    }
+    if (tools.aria2Path == null) {
+      throw const Aria2Exception('aria2 is needed to read magnet links');
+    }
+
+    await Directory(_metaDir).create(recursive: true);
+    final rpc = await _daemon();
+    final gid =
+        '${await rpc.call('aria2.addUri', [
+          [link],
+          {'dir': _metaDir, 'bt-metadata-only': 'true', 'bt-save-metadata': 'true', 'follow-torrent': 'false', 'seed-time': '0'},
+        ])}';
+    _inspecting[link] = gid;
+    try {
+      while (_inspecting[link] == gid) {
+        final status = await rpc.call('aria2.tellStatus', [
+          gid,
+          ['status', 'connections', 'errorMessage'],
+        ]);
+        if (status is! Map) break;
+        switch (status['status']) {
+          case 'complete':
+            // aria2 writes the file as the download completes.
+            for (var i = 0; i < 20 && !await cached.exists(); i++) {
+              await Future<void>.delayed(const Duration(milliseconds: 100));
+            }
+            return TorrentManifest.parse(await cached.readAsBytes());
+          case 'error':
+            throw Aria2Exception(
+              '${status['errorMessage'] ?? 'Could not read the magnet link'}',
+            );
+          case 'removed':
+            throw const Aria2Exception('Cancelled');
+        }
+        onPeers?.call(int.tryParse('${status['connections']}') ?? 0);
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+      }
+      throw const Aria2Exception('Cancelled');
+    } finally {
+      if (_inspecting[link] == gid) _inspecting.remove(link);
+      unawaited(
+        rpc
+            .call('aria2.removeDownloadResult', [gid])
+            .then((_) {}, onError: (_) {}),
+      );
+    }
+  }
+
+  /// Stops a magnet metadata fetch started by [inspect].
+  Future<void> cancelInspect(String url) async {
+    final gid = _inspecting.remove(url.trim());
+    final rpc = _rpc;
+    if (gid != null && rpc != null) await _remove(rpc, gid);
+  }
+
   @override
   Future<void> pause(String id) async {
     final task = _tasks.remove(id);
@@ -567,7 +691,7 @@ class TorrentEngine implements TransferEngine {
     await pause(id);
     if (task == null) return;
     // Delete only what aria2 said belongs to this torrent.
-    for (final path in task.files) {
+    for (final path in task.allFiles) {
       if (path.startsWith('[METADATA]')) continue;
       for (final candidate in [path, '$path.aria2']) {
         try {
@@ -585,7 +709,7 @@ class TorrentEngine implements TransferEngine {
         if (await control.exists()) await control.delete();
         final folder = Directory('$dir$sep$name');
         // Remove the torrent's folder only if nothing else is left in it.
-        if (task.files.length > 1 && await folder.exists()) {
+        if (task.allFiles.length > 1 && await folder.exists()) {
           final leftovers = await folder
               .list(recursive: true)
               .where((entity) => entity is File)

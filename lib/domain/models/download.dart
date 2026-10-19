@@ -86,6 +86,7 @@ class DownloadItem {
     this.phase,
     this.seeders = 0,
     this.uploadSpeed = 0,
+    this.selectedFiles,
   });
 
   final String id;
@@ -132,6 +133,9 @@ class DownloadItem {
   /// Torrent swarm stats (live only, not persisted). Peers use [connections].
   final int seeders;
   final double uploadSpeed;
+
+  /// Torrent files to download (1-based, as in the torrent); null for all.
+  final List<int>? selectedFiles;
 
   bool get isTorrent => kind == DownloadKind.torrent;
 
@@ -231,6 +235,7 @@ class DownloadItem {
       phase: clearPhase ? null : (phase ?? this.phase),
       seeders: seeders ?? this.seeders,
       uploadSpeed: uploadSpeed ?? this.uploadSpeed,
+      selectedFiles: selectedFiles,
     );
   }
 
@@ -260,6 +265,7 @@ class DownloadItem {
     'thumbnailUrl': thumbnailUrl,
     'speedLimit': speedLimit,
     'nameLocked': nameLocked,
+    'selectedFiles': selectedFiles,
   };
 
   static DownloadItem fromJson(Map<String, Object?> json) {
@@ -292,6 +298,9 @@ class DownloadItem {
       thumbnailUrl: json['thumbnailUrl'] as String?,
       speedLimit: json['speedLimit'] as String? ?? 'No Limit',
       nameLocked: json['nameLocked'] as bool? ?? false,
+      selectedFiles: (json['selectedFiles'] as List?)
+          ?.map((index) => (index as num).toInt())
+          .toList(),
     );
   }
 }
